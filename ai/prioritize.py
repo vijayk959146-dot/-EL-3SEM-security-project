@@ -52,27 +52,39 @@ def _invoke_bedrock(user_payload: str) -> str:
     import boto3
 
     client = boto3.client("bedrock-runtime", region_name=AWS_REGION)
-    body = {
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 4000,
-        "temperature": 0.2,
-        "system": SYSTEM_RULES,
-        "messages": [
-            {
-                "role": "user",
-                "content": [{"type": "text", "text": user_payload}],
-            }
-        ],
-    }
-    response = client.invoke_model(
-        modelId=BEDROCK_MODEL_ID,
-        contentType="application/json",
-        accept="application/json",
-        body=json.dumps(body),
-    )
-    raw = json.loads(response["body"].read())
-    parts = raw.get("content") or []
-    return "".join(p.get("text", "") for p in parts if p.get("type") == "text")
+    # Try universal Bedrock Converse API first
+    try:
+        response = client.converse(
+            modelId=BEDROCK_MODEL_ID,
+            system=[{"text": SYSTEM_RULES}],
+            messages=[{"role": "user", "content": [{"text": user_payload}]}],
+            inferenceConfig={"maxTokens": 4000, "temperature": 0.2},
+        )
+        parts = response.get("output", {}).get("message", {}).get("content", [])
+        return "".join(p.get("text", "") for p in parts if isinstance(p, dict) and "text" in p)
+    except Exception:
+        # Fallback to invoke_model for Anthropic Claude direct format
+        body = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 4000,
+            "temperature": 0.2,
+            "system": SYSTEM_RULES,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": user_payload}],
+                }
+            ],
+        }
+        response = client.invoke_model(
+            modelId=BEDROCK_MODEL_ID,
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps(body),
+        )
+        raw = json.loads(response["body"].read())
+        parts = raw.get("content") or []
+        return "".join(p.get("text", "") for p in parts if p.get("type") == "text")
 
 
 def _parse_llm_json(text: str) -> dict[str, Any]:

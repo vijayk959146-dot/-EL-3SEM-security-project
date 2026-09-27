@@ -34,26 +34,36 @@ def main() -> int:
 
     try:
         client = boto3.client("bedrock-runtime", region_name=AWS_REGION)
-        body = {
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 8,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [{"type": "text", "text": "Reply with the single word pong."}],
-                }
-            ],
-        }
-        response = client.invoke_model(
-            modelId=BEDROCK_MODEL_ID,
-            contentType="application/json",
-            accept="application/json",
-            body=json.dumps(body),
-        )
-        payload = json.loads(response["body"].read())
-        text = "".join(
-            p.get("text", "") for p in payload.get("content") or [] if p.get("type") == "text"
-        )
+        # Try universal Converse API first
+        try:
+            response = client.converse(
+                modelId=BEDROCK_MODEL_ID,
+                messages=[{"role": "user", "content": [{"text": "Reply with the single word pong."}]}],
+                inferenceConfig={"maxTokens": 16, "temperature": 0.0},
+            )
+            text = response["output"]["message"]["content"][0]["text"]
+        except Exception:
+            # Fallback to invoke_model for older models/formats
+            body = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 8,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [{"type": "text", "text": "Reply with the single word pong."}],
+                    }
+                ],
+            }
+            response = client.invoke_model(
+                modelId=BEDROCK_MODEL_ID,
+                contentType="application/json",
+                accept="application/json",
+                body=json.dumps(body),
+            )
+            payload = json.loads(response["body"].read())
+            text = "".join(
+                p.get("text", "") for p in payload.get("content") or [] if p.get("type") == "text"
+            )
         print(f"Bedrock invoke OK. Model said: {text!r}")
         return 0
     except (BotoCoreError, ClientError) as exc:
