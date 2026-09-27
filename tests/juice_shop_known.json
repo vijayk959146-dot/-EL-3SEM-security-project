@@ -1,0 +1,54 @@
+{
+  "target": "OWASP Juice Shop (local Docker)",
+  "source": "Public Juice Shop challenge themes + what this tool can observe without exploiting the app.",
+  "detectable_by_this_tool": [
+    {
+      "id": "http-no-tls",
+      "label": "Application reachable over HTTP without TLS",
+      "keywords": ["without tls", "http, not https", "http without tls", "no https", "not https"]
+    },
+    {
+      "id": "open-web-port",
+      "label": "Web service listening on a local port (typically 3000)",
+      "keywords": ["open tcp/3000", "open tcp/80", "port 3000", "listening", "open tcp/"]
+    },
+    {
+      "id": "missing-csp",
+      "label": "Missing Content-Security-Policy header",
+      "keywords": ["content-security-policy", "missing security header: content-security-policy"]
+    },
+    {
+      "id": "missing-xfo",
+      "label": "Missing X-Frame-Options header",
+      "keywords": ["x-frame-options"]
+    },
+    {
+      "id": "missing-xcto",
+      "label": "Missing X-Content-Type-Options header",
+      "keywords": ["x-content-type-options"]
+    },
+    {
+      "id": "missing-referrer-policy",
+      "label": "Missing Referrer-Policy header",
+      "keywords": ["referrer-policy"]
+    }
+  ],
+  "not_detectable_nmap_nvd": [
+    {
+      "id": "score-board",
+      "label": "Score Board (hidden challenge page) — application logic, not a service banner"
+    },
+    {
+      "id": "dom-xss",
+      "label": "DOM XSS — needs application testing, not CVE lookup from Nmap"
+    },
+    {
+      "id": "sqli-login",
+      "label": "SQL injection on login — needs application testing; we do not send attack payloads"
+    },
+    {
+      "id": "broken-auth",
+      "label": "Broken authentication challenges — out of scope for this correlator"
+    }
+  ]
+}
