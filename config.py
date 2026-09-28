@@ -104,6 +104,12 @@ def load_allowlist() -> set[str]:
     return allowed
 
 
+def get_target_allowlist() -> set[str]:
+    """Alias for load_allowlist()."""
+    return load_allowlist()
+
+
+
 def is_target_allowed(target: str) -> bool:
     host = _normalize_host(target)
     if not host:

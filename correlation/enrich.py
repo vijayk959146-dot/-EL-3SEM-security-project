@@ -29,6 +29,7 @@ KEV_CACHE_FILE = CACHE_DIR / "kev_catalog.json"
 EPSS_CACHE_DIR = CACHE_DIR / "epss"
 
 KEV_CACHE_TTL_SECONDS = 86400  # 24 hours
+EPSS_CACHE_TTL_SECONDS = 86400  # 24 hours
 
 
 def _load_cisa_kev_catalog() -> set[str]:
@@ -49,27 +50,27 @@ def _load_cisa_kev_catalog() -> set[str]:
         except (json.JSONDecodeError, OSError):
             pass
 
-    # Fetch from CISA with strict timeout
+    # Fetch from CISA with strict timeout and context manager
     try:
-        response = requests.get(CISA_KEV_URL, timeout=15)
-        response.raise_for_status()
-        payload = response.json()
-        vulnerabilities = payload.get("vulnerabilities") or []
-        cve_ids = [v.get("cveID") for v in vulnerabilities if v.get("cveID")]
-        
-        # Save cache
-        KEV_CACHE_FILE.write_text(
-            json.dumps({"updated_at": now, "count": len(cve_ids), "cve_ids": cve_ids}),
-            encoding="utf-8",
-        )
-        return set(cve_ids)
-    except Exception as exc:
+        with requests.get(CISA_KEV_URL, timeout=15) as response:
+            response.raise_for_status()
+            payload = response.json()
+            vulnerabilities = payload.get("vulnerabilities") or []
+            cve_ids = [v.get("cveID") for v in vulnerabilities if v.get("cveID")]
+            
+            # Save cache
+            KEV_CACHE_FILE.write_text(
+                json.dumps({"updated_at": now, "count": len(cve_ids), "cve_ids": cve_ids}),
+                encoding="utf-8",
+            )
+            return set(cve_ids)
+    except (requests.RequestException, json.JSONDecodeError, OSError, ValueError) as exc:
         # Graceful fallback: return empty set or stale cache if network unavailable
         if KEV_CACHE_FILE.exists():
             try:
                 data = json.loads(KEV_CACHE_FILE.read_text(encoding="utf-8"))
                 return set(data.get("cve_ids") or [])
-            except Exception:
+            except (json.JSONDecodeError, OSError):
                 pass
         return set()
 
@@ -85,17 +86,26 @@ def _get_epss_scores(cve_ids: list[str]) -> dict[str, float]:
     EPSS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     results: dict[str, float] = {}
     missing_cves: list[str] = []
+    now = time.time()
 
-    # Check local cache first
+    # Check local cache first with TTL validation
     for cve_id in cve_ids:
         cache_file = EPSS_CACHE_DIR / f"{cve_id}.json"
         if cache_file.exists():
             try:
-                cached = json.loads(cache_file.read_text(encoding="utf-8"))
-                results[cve_id] = float(cached["epss"])
-                continue
+                mtime = cache_file.stat().st_mtime
+                if now - mtime < EPSS_CACHE_TTL_SECONDS:
+                    cached = json.loads(cache_file.read_text(encoding="utf-8"))
+                    cached_at = cached.get("cached_at")
+                    if cached_at and (now - cached_at > EPSS_CACHE_TTL_SECONDS):
+                        cache_file.unlink(missing_ok=True)
+                    else:
+                        results[cve_id] = float(cached["epss"])
+                        continue
+                else:
+                    cache_file.unlink(missing_ok=True)
             except (json.JSONDecodeError, KeyError, ValueError, OSError):
-                pass
+                cache_file.unlink(missing_ok=True)
         missing_cves.append(cve_id)
 
     if not missing_cves:
@@ -107,26 +117,29 @@ def _get_epss_scores(cve_ids: list[str]) -> dict[str, float]:
         chunk = missing_cves[i : i + chunk_size]
         query_param = ",".join(chunk)
         try:
-            response = requests.get(
+            with requests.get(
                 EPSS_API_URL,
                 params={"cve": query_param},
                 timeout=15,
-            )
-            response.raise_for_status()
-            data = response.json().get("data") or []
-            for item in data:
-                cid = item.get("cve")
-                score_str = item.get("epss")
-                if cid and score_str is not None:
-                    score = float(score_str)
-                    results[cid] = score
-                    # Cache on disk
-                    cache_file = EPSS_CACHE_DIR / f"{cid}.json"
-                    try:
-                        cache_file.write_text(json.dumps({"cve": cid, "epss": score}), encoding="utf-8")
-                    except OSError:
-                        pass
-        except Exception:
+            ) as response:
+                response.raise_for_status()
+                data = response.json().get("data") or []
+                for item in data:
+                    cid = item.get("cve")
+                    score_str = item.get("epss")
+                    if cid and score_str is not None:
+                        score = float(score_str)
+                        results[cid] = score
+                        # Cache on disk
+                        cache_file = EPSS_CACHE_DIR / f"{cid}.json"
+                        try:
+                            cache_file.write_text(
+                                json.dumps({"cve": cid, "epss": score, "cached_at": now}),
+                                encoding="utf-8",
+                            )
+                        except OSError:
+                            pass
+        except (requests.RequestException, json.JSONDecodeError, OSError, ValueError):
             # Network or API failure: fail gracefully, leave scores as None
             pass
 
@@ -150,7 +163,7 @@ def enrich_cves(cves: list[CveRecord], notes: list[str] | None = None) -> list[C
         for record in cves:
             if record.cve_id in kev_set:
                 record.kev = True
-    except Exception as exc:
+    except (requests.RequestException, OSError, ValueError) as exc:
         if notes is not None:
             notes.append(f"CISA KEV check skipped: {exc.__class__.__name__}")
 
@@ -160,8 +173,9 @@ def enrich_cves(cves: list[CveRecord], notes: list[str] | None = None) -> list[C
         for record in cves:
             if record.cve_id in epss_map:
                 record.epss = epss_map[record.cve_id]
-    except Exception as exc:
+    except (requests.RequestException, OSError, ValueError) as exc:
         if notes is not None:
             notes.append(f"EPSS score check skipped: {exc.__class__.__name__}")
 
     return cves
+

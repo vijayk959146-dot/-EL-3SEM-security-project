@@ -247,7 +247,7 @@ def _query_certificate_transparency(domain: str) -> list[str]:
     subdomains: set[str] = set()
     try:
         url = f"https://crt.sh/?q=%25.{domain}&output=json"
-        res = requests.get(url, timeout=6.0, headers={"User-Agent": "Mozilla/5.0 (Defensive Sec Tool)"})
+        res = safe_fetch(url, timeout=6.0, headers={"User-Agent": "Mozilla/5.0 (Defensive Sec Tool)"})
         if res.status_code == 200:
             entries = res.json()
             for entry in entries[:100]:
@@ -256,24 +256,28 @@ def _query_certificate_transparency(domain: str) -> list[str]:
                     sub = sub.strip().lower()
                     if "*" not in sub and sub.endswith(domain) and sub != domain:
                         subdomains.add(sub)
-    except Exception:
+    except (SafeFetchError, requests.RequestException, json.JSONDecodeError, OSError, ValueError):
         pass  # ct logs lookup is best-effort
     return sorted(list(subdomains))[:25]
 
 
 def _query_shodan_intelligence(domain: str) -> dict[str, Any]:
-    """Query Shodan's passive threat index for public open ports and CVEs."""
+    """Query Shodan's passive threat index for public open ports and CVEs safely."""
     shodan_info: dict[str, Any] = {"ports": [], "cpes": [], "tags": [], "source": "shodan-internetdb"}
     try:
-        ip = socket.gethostbyname(domain)
-        # Use free public InternetDB
-        res = requests.get(f"https://internetdb.shodan.io/{ip}", timeout=4.0)
+        from discovery.safe_fetch import resolve_and_validate_hostname
+        validated_ips = resolve_and_validate_hostname(domain)
+        if not validated_ips:
+            return shodan_info
+        ip = validated_ips[0]
+        # Use free public InternetDB via safe_fetch to prevent SSRF / rebinding
+        res = safe_fetch(f"https://internetdb.shodan.io/{ip}", timeout=4.0)
         if res.status_code == 200:
             data = res.json()
             shodan_info["ports"] = data.get("ports", [])
             shodan_info["cpes"] = data.get("cpes", [])
             shodan_info["tags"] = data.get("tags", [])
-    except Exception:
+    except (SafeFetchError, requests.RequestException, json.JSONDecodeError, OSError, ValueError):
         pass
     return shodan_info
 
@@ -343,5 +347,6 @@ def discover_passive(domain: str) -> DiscoveredAssets:
         notes=notes,
     )
 
-    write_json("discovered_assets.json", assets)
+    write_json("discovered_assets.json", assets, target=domain)
     return assets
+

@@ -520,9 +520,73 @@ class TestSecurityPipeline(unittest.TestCase):
         self.assertTrue(any("severity" in e.lower() for e in errors),
                         f"Expected severity error, got: {errors}")
 
+    # --- 14. EPSS cache TTL and eviction ---
+    def test_epss_cache_ttl_and_eviction(self):
+        """EPSS cache entries must be evicted when expired or corrupt."""
+        import json
+        import tempfile
+        import time
+        from pathlib import Path
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            with patch("correlation.enrich.EPSS_CACHE_DIR", tmp):
+                from correlation.enrich import _get_epss_scores, EPSS_CACHE_TTL_SECONDS
+
+                cve_id = "CVE-2024-1111"
+                cache_file = tmp / f"{cve_id}.json"
+
+                # Save expired entry (>24h ago)
+                cache_file.write_text(json.dumps({
+                    "cve": cve_id,
+                    "epss": 0.85,
+                    "cached_at": time.time() - EPSS_CACHE_TTL_SECONDS - 100
+                }), encoding="utf-8")
+
+                import requests
+                # Mock network request to fail so we verify cache eviction without real network fetch
+                with patch("requests.get", side_effect=requests.RequestException("Network offline")):
+                    scores = _get_epss_scores([cve_id])
+                    self.assertNotIn(cve_id, scores, "Expired EPSS cache entry should be evicted")
+                    self.assertFalse(cache_file.exists(), "Expired EPSS cache file should be deleted")
+
+    # --- 15. Shodan SSRF protection ---
+    def test_shodan_ssrf_protection(self):
+        """Shodan lookup must resolve target hostname safely and reject private IPs."""
+        from unittest.mock import patch
+        from discovery.passive import _query_shodan_intelligence
+        from discovery.safe_fetch import SafeFetchError
+
+        # Mock resolve_and_validate_hostname to raise SafeFetchError for internal IP
+        with patch("discovery.safe_fetch.resolve_and_validate_hostname", side_effect=SafeFetchError("Internal IP blocked")):
+            info = _query_shodan_intelligence("internal.local")
+            self.assertEqual(info["ports"], [], "Shodan lookup must abort cleanly for internal/blocked IPs")
+            self.assertEqual(info["cpes"], [])
+
+    # --- 16. Dashboard target discovery ---
+    def test_dashboard_target_discovery(self):
+        """Dashboard must discover per-target folders under DATA_DIR."""
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        import dashboard.app as dash_app
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            target1 = tmp / "target-one.com"
+            target1.mkdir()
+            (target1 / "prioritized_report.json").write_text("{}", encoding="utf-8")
+
+            with patch.object(dash_app, "DATA_DIR", tmp):
+                discovered = dash_app._discover_available_targets()
+                self.assertIn("target-one.com", discovered)
+
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

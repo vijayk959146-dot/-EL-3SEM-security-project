@@ -166,3 +166,26 @@ def check_verification(domain: str) -> tuple[bool, str]:
         return True, f"Domain '{clean_domain}' successfully verified via HTTP .well-known file! Active scans are now authorized for 30 days."
 
     return False, f"Verification failed for '{clean_domain}'. Neither DNS TXT record (_attacksurface-verify.{clean_domain}) nor https://{clean_domain}/.well-known/attacksurface-verify.txt matched the expected token."
+
+
+def generate_verification_token(domain: str) -> str:
+    """Generate or retrieve the verification token for a domain."""
+    res = start_verification(domain)
+    return res["token"]
+
+
+def check_domain_verification(domain: str) -> tuple[bool, str]:
+    """Alias for check_verification(domain)."""
+    return check_verification(domain)
+
+
+def load_verified_targets() -> dict[str, dict[str, Any]]:
+    """Return all currently active verified target records."""
+    data = _load_verified_data()
+    return {k: v for k, v in data.items() if is_domain_verified(k)}
+
+
+def get_verification_record(domain: str) -> dict[str, Any] | None:
+    """Return the raw verification record for a domain if present."""
+    return _load_verified_data().get(domain.strip().lower())
+

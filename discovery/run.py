@@ -40,5 +40,5 @@ def discover(target: str, ports: list[int] | None = None) -> DiscoveredAssets:
         tls=tls,
         notes=notes,
     )
-    write_json("discovered_assets.json", assets)
+    write_json("discovered_assets.json", assets, target=host)
     return assets

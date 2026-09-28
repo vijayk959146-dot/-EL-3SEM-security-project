@@ -75,17 +75,41 @@ if DASHBOARD_PASSWORD:
 
 
 
-def _load_report() -> dict:
-    try:
-        return read_json("prioritized_report.json")
-    except FileNotFoundError:
-        return {}
+from config import DATA_DIR
 
 
-report = _load_report()
+def _discover_available_targets() -> list[str]:
+    """Find all scan targets with stored reports in data/<target>/."""
+    targets: list[str] = []
+    if DATA_DIR.exists():
+        for item in DATA_DIR.iterdir():
+            if item.is_dir() and item.name not in {"cache", "history", "scratch"}:
+                if (item / "prioritized_report.json").exists() or (item / "history").exists():
+                    targets.append(item.name)
+    return sorted(targets)
+
+
+available_targets = _discover_available_targets()
 
 # Sidebar: Scan History & Target Selector
 st.sidebar.title("🛡️ Project Controls")
+
+selected_target: str | None = None
+if available_targets:
+    selected_target = st.sidebar.selectbox("🎯 Target Selector", available_targets, index=0)
+
+
+def _load_report(target: str | None = None) -> dict:
+    try:
+        return read_json("prioritized_report.json", target=target)
+    except FileNotFoundError:
+        try:
+            return read_json("prioritized_report.json")
+        except FileNotFoundError:
+            return {}
+
+
+report = _load_report(selected_target)
 
 # Domain Verification Panel in Sidebar
 with st.sidebar.expander("🔑 Domain Ownership Verification", expanded=False):
@@ -126,7 +150,7 @@ with st.sidebar.expander("🔑 Domain Ownership Verification", expanded=False):
         for dom, info in active_verified.items():
             st.code(f"{dom} ({info.get('method')}) until {info.get('expires_at', '')[:10]}", language="text")
 
-history_files = list_run_history()
+history_files = list_run_history(target=selected_target)
 
 st.sidebar.subheader("Scan History & Diffs")
 selected_history = None
@@ -245,8 +269,10 @@ if len(history_files) > 1:
             key="diff_selector",
         )
         if prev_file:
-            prev_report = json.loads((ROOT / "data" / "history" / prev_file).read_text(encoding="utf-8"))
-            diff = diff_reports(report, prev_report)
+            prev_path = next((f for f in history_files if f.name == prev_file), None)
+            if prev_path:
+                prev_report = json.loads(prev_path.read_text(encoding="utf-8"))
+                diff = diff_reports(report, prev_report)
             
             d1, d2, d3 = st.columns(3)
             d1.metric("🆕 New Issues", len(diff["new"]), delta=f"+{len(diff['new'])}" if diff["new"] else None, delta_color="inverse")
