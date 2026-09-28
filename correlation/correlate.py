@@ -33,10 +33,15 @@ def _config_issues(discovered: dict) -> list[str]:
     tls = discovered.get("tls") or {}
     if not tls.get("skipped") and tls.get("grade") in {"C", "D", "E", "F", "T"}:
         issues.append(f"Weak TLS grade from SSL Labs: {tls.get('grade')}")
-    # Local TLS issues
-    local_tls_issues = tls.get("raw", {}).get("local", {}).get("issues") if isinstance(tls.get("raw"), dict) else []
-    for local_issue in local_tls_issues or []:
-        issues.append(f"TLS Configuration: {local_issue}")
+    # Passive DNS issues (SPF / DMARC)
+    passive_dns_issues = discovered.get("passive_meta", {}).get("dns", {}).get("issues") or []
+    for dns_issue in passive_dns_issues:
+        issues.append(f"DNS Email Security: {dns_issue}")
+
+    # Passive CT subdomains summary note
+    ct_subs = discovered.get("passive_meta", {}).get("ct_subdomains") or []
+    if ct_subs:
+        issues.append(f"Certificate Transparency Mapping: Found {len(ct_subs)} associated subdomains (informational only; not scanned).")
 
     return issues
 
@@ -106,6 +111,7 @@ def correlate(discovered: dict | None = None) -> CorrelatedFindings:
     result = CorrelatedFindings(
         target=target,
         assets=assets,
+        mode=discovered.get("mode", "active"),
         notes=list(discovered.get("notes") or []),
     )
     write_json("correlated_findings.json", result)

@@ -6,13 +6,59 @@ It is **not** a penetration testing or offensive exploitation tool. It is a stri
 
 ---
 
-## 🛡️ Safety & Guardrails (Strict Allowlist)
+## 🛡️ Dual Operational Modes & Safety Guardrails
 
-- Scans **only** hosts listed in `targets.allowlist` (e.g. `localhost`, `127.0.0.1`, `::1`).
-- Default target is local **OWASP Juice Shop** (Docker). Third-party hosts cannot be scanned.
-- **Passive checks only**: No exploit payloads, no fuzzing, no brute-forcing, and no attack scripts.
-- **Prompt Injection Defense**: Target-derived banners and HTTP headers are sanitized and enclosed in `<target_data>` delimiters with strict LLM system safety rules.
-- **Credential Protection**: Credentials come from `.env` or the default AWS IAM role/credential chain and are never committed to git.
+The tool supports checking real-world domains and local labs exclusively through two safe, ethical operational modes:
+
+| Mode | Target Eligibility | Scope & Capabilities | Probing / Scanning Behavior |
+| :--- | :--- | :--- | :--- |
+| **1. Passive OSINT Mode** *(Default)* | Any public internet domain (e.g. `example.com`) | Safe HTTP root headers (`GET /`), public TLS cert inspection, DNS records (A, AAAA, MX, TXT, SPF, DMARC), Certificate Transparency log enumeration (`crt.sh`), optional Shodan InternetDB cache. | **Zero Port Probing**: Strictly passive. Never runs Nmap, never connects to arbitrary ports, never probes paths. |
+| **2. Verified Active Mode** | Localhost / allowlist lab targets (`targets.allowlist`) **OR** domains verified via ownership challenge | Full active pipeline: Nmap service version detection (`-sV`), local TLS socket inspection, port-level CVE correlation. | **Authorized Port Probing**: Allowed only against targets the user explicitly owns or controls. |
+
+---
+
+## 🔑 Domain Ownership Verification (`verification/`)
+
+To authorize active port scanning against a public domain, you must prove administrative control over the domain.
+
+```
+┌────────────────────────────────────────────────────────┐
+│             Domain Ownership Challenge Flow            │
+└────────────────────────────────────────────────────────┘
+  1. Generate Challenge Token:
+     $ python -m verification start mydomain.com
+     ├── Token: e82f9d...a7
+     ├── Option A: Add DNS TXT record:
+     │             _attacksurface-verify.mydomain.com -> e82f9d...a7
+     └── Option B: Host file at:
+                   https://mydomain.com/.well-known/attacksurface-verify.txt
+
+  2. Verify Ownership:
+     $ python -m verification check mydomain.com
+     └── [SUCCESS] Domain verified for 30 days! (Expires in 30 days)
+```
+
+### CLI Commands:
+- **Start Verification**:
+  ```bash
+  python -m verification start example.com
+  ```
+- **Check Verification**:
+  ```bash
+  python -m verification check example.com
+  ```
+- Verification state is stored securely in `data/verified_targets.json` with a **30-day time-to-live (TTL)**. Expired entries automatically fail closed and revert to Passive OSINT mode.
+
+---
+
+## 🔒 SSRF & Abuse Defenses (`discovery/safe_fetch.py`)
+
+When interacting with external web endpoints, the tool enforces strict Server-Side Request Forgery (SSRF) and network abuse safeguards:
+- **Scheme & Port Restriction**: Only `http://` and `https://` on ports 80 and 443 are allowed for external lookups.
+- **Private & Cloud Metadata Blocklist**: Every hostname resolution is checked via `ipaddress`. Any resolution to private (RFC 1918 `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), loopback (`127.0.0.0/8`, `::1`), link-local (`169.254.0.0/16`, `fe80::/10`), multicast, or cloud instance metadata endpoints (`169.254.169.254`, `fd00:ec2::254`) is immediately aborted.
+- **DNS Rebinding Defense**: Connects directly to pre-validated IP addresses or re-validates DNS resolution prior to HTTP dispatch.
+- **Manual Redirect Re-validation**: HTTP redirects are followed manually (capped at 3 hops), with full SSRF and IP validation re-executed on every intermediate hop.
+- **Response & Rate Limiting**: Capped at 1 MB response payload and 6.0-second network timeouts per request with per-domain rate limiting.
 
 ---
 
@@ -20,70 +66,64 @@ It is **not** a penetration testing or offensive exploitation tool. It is a stri
 
 | Concept | Explanation |
 | :--- | :--- |
+| **SSRF (Server-Side Request Forgery)** | A vulnerability where an attacker tricks a backend server into requesting internal, non-public systems (e.g. AWS metadata). |
+| **DNS Rebinding** | An attack that exploits DNS TTL changes to make a public domain resolve to an internal IP like `127.0.0.1`. |
+| **Certificate Transparency (CT)** | Public append-only logs recording all issued TLS certificates, allowing discovery of associated subdomains. |
+| **SPF & DMARC** | DNS TXT records specifying which mail servers are authorized to send email for a domain, preventing email spoofing. |
 | **CPE (Common Platform Enumeration)** | A structured naming scheme (e.g. `cpe:2.3:a:apache:http_server:2.4.49`) used to query NVD for exact version matches. |
 | **CVSS (Common Vulnerability Scoring System)** | A 0.0 to 10.0 score reflecting theoretical flaw severity. |
 | **CISA KEV (Known Exploited Vulnerabilities)** | A public catalog of vulnerabilities actively weaponized by real-world threat actors in the wild. |
 | **EPSS (Exploit Prediction Scoring System)** | A machine-learning probability score (0.0 to 1.0 / 0% to 100%) predicting real-world exploitation in the next 30 days. |
 | **SameSite Cookie Attribute** | Flag (`Strict`, `Lax`, `None`) that tells the browser whether to send cookies on cross-origin requests, preventing CSRF attacks. |
 | **CORS (Cross-Origin Resource Sharing)** | Header policy controlling domain API access. A wildcard `Access-Control-Allow-Origin: *` allows any website to read sensitive API data. |
-| **Security Headers (CSP, HSTS, XFO, XCTO)** | Defensive HTTP response configurations that harden the web application against XSS, clickjacking, and MIME sniffing. |
 
 ---
 
 ## 🏗️ Architecture Pipeline
 
 ```
-OWASP Juice Shop (Docker on localhost:3000)
-        │
-        ▼
- [1] Discovery Stage
-     ├── Port & Service Scan (Nmap -sV or TCP-connect fallback)
-     ├── Passive HTTP Inspection (Title, CSP, HSTS, XFO, XCTO, Referrer-Policy)
-     ├── Cookie Flag Hardening (Secure, HttpOnly, SameSite)
-     ├── CORS Misconfiguration & Version Disclosure checks
-     └── Local TLS Socket Inspection (Protocol version & Certificate analysis)
-        │  data/discovered_assets.json
-        ▼
- [2] Correlation & Threat Intelligence Stage
-     ├── NVD REST API v2 lookup (CPE-based search with keyword fallback & disk cache)
-     ├── CISA KEV Catalog matching (Cached for 24 hours)
-     └── FIRST EPSS Threat Probability query
-        │  data/correlated_findings.json
-        ▼
- [3] AI Defensive Prioritization Stage
-     ├── Amazon Bedrock model-agnostic Converse API (Amazon Nova / Anthropic Claude)
-     ├── Prompt injection sanitization (<target_data> boundary)
-     ├── Copy-paste defensive remediation snippets (Nginx / Express Helmet)
-     └── Deterministic KEV > EPSS > CVSS heuristic fallback
-        │  data/prioritized_report.json & data/history/run_<timestamp>_<target>.json
-        ▼
- [4] Interactive Streamlit Dashboard & Evaluation
-     ├── Live Metrics & Ranked Finding Cards
-     ├── Scan History Diff Viewer (New, Resolved, Unchanged findings)
-     ├── CSV & Standalone HTML Report Exports
-     └── Benchmark Scoring (Precision, Recall, F1 & Spearman Rank Correlation)
+          Target Host / Public Domain
+                      │
+        ┌─────────────┴─────────────┐
+        ▼                           ▼
+[Unverified / Public]      [Allowlisted / Verified]
+ 100% Passive OSINT         Authorized Active Scan
+ ├── Safe GET / (Headers)   ├── Nmap / TCP Port Probe
+ ├── TLS Cert Parsing       ├── Service Banner -sV
+ ├── DNS (SPF/DMARC/MX)     └── Local TLS Socket Audit
+ └── CT Logs (crt.sh)
+        │                           │
+        └─────────────┬─────────────┘
+                      ▼
+        [2] Correlation & Threat Intelligence
+            ├── NVD CVE Matching (CPE & keyword)
+            ├── CISA KEV Exploited Catalog lookup
+            └── FIRST EPSS Exploit Probability
+                      │
+                      ▼
+        [3] AI Defensive Prioritization
+            ├── Amazon Bedrock Converse API (Amazon Nova / Anthropic Claude)
+            ├── Strict Prompt Injection Sanitization (<target_data> boundary)
+            ├── Mode-aware prompting (never implies active testing on unverified)
+            └── Deterministic KEV > EPSS > CVSS fallback
+                      │
+                      ▼
+        [4] Dashboard & Evaluation Suite
+            ├── Streamlit Interactive UI with Domain Verification Panel
+            ├── Scan History & Diff Analysis (New / Resolved / Unchanged)
+            └── CSV & HTML Report Downloads
 ```
 
 ---
 
 ## 🚀 Setup & Execution
 
-### 1. Prerequisites
-- Python 3.10+
-- Docker (for OWASP Juice Shop)
-- AWS Credentials / IAM Role with Amazon Bedrock permissions
-
-### 2. Start OWASP Juice Shop Lab
-```bash
-docker run -d --name juice-shop -p 3000:3000 bkimminich/juice-shop
-```
-
-### 3. Installation
+### 1. Installation
 ```bash
 python -m venv .venv
 # Windows: .venv\Scripts\activate | Linux/macOS: source .venv/bin/activate
 pip install -r requirements.txt
-copy .env.example .env   # On Windows
+copy .env.example .env   # On Windows (or cp on Linux/macOS)
 ```
 
 Configure `.env` with your AWS credentials:
@@ -95,83 +135,67 @@ BEDROCK_MODEL_ID=amazon.nova-micro-v1:0
 DASHBOARD_PASSWORD=  # Optional password for Streamlit
 ```
 
-Verify Bedrock connectivity:
-```bash
-python verify_access.py
-```
+### 2. Running Scans
+
+- **Passive OSINT Scan (Any public domain)**:
+  ```bash
+  python run_pipeline.py --target example.com
+  ```
+- **Localhost Lab Scan (Active probing authorized)**:
+  ```bash
+  python run_pipeline.py --target localhost --ports 80,443,3000,8000,8080
+  ```
+- **Force Passive Mode on Verified Domain**:
+  ```bash
+  python run_pipeline.py --target verified-site.com --passive-only
+  ```
 
 ---
 
-## 💻 Running Scans
+## 📊 Evaluation & Testing
 
-### Single Target Scan
 ```bash
-python run_pipeline.py --target localhost --ports 80,443,3000,8000,8080
-```
+# Run full unit test suite (SSRF, Verification, Diffs, AI Sanitization)
+python -m unittest discover -s tests -v
 
-### Multi-Target Scan
-```bash
-python run_pipeline.py --targets localhost,127.0.0.1
-```
-
----
-
-## 📊 Evaluation & Validation
-
-### 1. Benchmark Validation (Precision, Recall, F1)
-```bash
+# Run OWASP Juice Shop benchmark evaluation
 python tests/validate.py
-```
-Output:
-```
-==============================================================
-           VALIDATION BENCHMARK EVALUATION TABLE          
-==============================================================
-Target evaluated: localhost
---------------------------------------------------------------
-  True Positives (TP):      5    (Successfully detected)
-  False Negatives (FN):     1    (Missed expected checks)
-  False Positives (FP):     1    (Spurious findings)
-  Total Expected Items:     6   
-  Total Report Findings:    3   
---------------------------------------------------------------
-  RECALL:                   83.3%
-  PRECISION:                83.3%
-  F1-SCORE:                 83.3%
-==============================================================
-```
 
-### 2. Ranking Methodology Comparison (Spearman Rank Correlation)
-Compares plain CVSS vs Threat Intelligence (KEV/EPSS) vs AI Bedrock ranking:
-```bash
+# Run ranking methodology comparison (CVSS vs KEV/EPSS vs Bedrock AI)
 python tests/compare_rankings.py
-```
-
-### 3. Unit Tests (Offline Test Suite)
-```bash
-python -m unittest discover -s tests
 ```
 
 ---
 
 ## 🖥️ Streamlit Dashboard
 
-Launch the interactive web UI:
+Launch the web UI:
 ```bash
 streamlit run dashboard/app.py
 ```
 
-Features included:
-- **Executive Summary & Threat Metrics**
-- **Scan History & Diff Viewer**: Track remediation between runs (**New**, **Resolved**, **Unchanged**).
-- **Download Reports**: Export standalone **HTML Reports** and **CSV Spreadsheets**.
-- **Password Protection**: Enabled when `DASHBOARD_PASSWORD` is set in `.env`.
+Includes:
+- **Dynamic Mode Badges**: `Local Lab`, `Passive OSINT`, and `Verified Active`.
+- **Domain Verification Panel**: Interactive DNS TXT / `.well-known` token generation and validation.
+- **Passive OSINT Inspector**: Explore public DNS records, TLS certificates, and Certificate Transparency subdomains.
+- **Scan History Diffs**: Track vulnerability remediation over time.
+- **Report Exports**: Download findings in CSV and HTML formats.
 
 ---
 
-## ⚠️ Known Limitations & Scope
+## ⚠️ Honest Limitations & Scope
 
-To maintain ethical defensive principles and prevent accidental damage:
-1. **Application-Layer Challenges**: Inherent web application flaws (such as DOM XSS, SQL injection on login forms, and hidden scoreboards) require dynamic payload injection and are intentionally out of scope.
-2. **Missing Version Banners**: If Nmap is not installed, the tool uses TCP-connect probing; NVD CVE lookups are limited without product version banners.
-3. **Localhost SSL Labs**: SSL Labs requires publicly resolvable domain names. For localhost/Docker, the tool uses direct local Python TLS socket inspection.
+1. **Domain Control vs Server Ownership**: Ownership verification proves control over a hostname's DNS zone or web document root. It does **not** prove ownership of the shared physical server, cloud hypervisor, or IP address space hosting it.
+2. **Passive Mode Scope**: Passive scans strictly see what an ordinary visitor's web browser sees (`GET /`, TLS certificate, and public DNS records). It does not reveal internal endpoints, closed ports, or non-HTTP services.
+3. **Certificate Transparency Subdomains**: Subdomains extracted from public Certificate Transparency logs (`crt.sh`) are indexed for organizational awareness only and are **never scanned automatically**. Each subdomain requires separate verification before active probing.
+4. **No Exploitation**: The tool does not perform fuzzing, SQL injection, XSS exploitation, brute forcing, or directory brute-forcing.
+
+---
+
+## ⚖️ Ethics and Responsible Use
+
+This tool was designed under ethical AI and defensive security research principles:
+- **Authorization by Default**: Active port scanning is prohibited against unauthorized targets.
+- **Safe Intelligence Gathering**: Public domain lookups utilize rate-limited, non-intrusive queries.
+- **AI Safety & Defense-Only Remediation**: The AI model is instructed to provide only defensive hardening advice (e.g. Nginx configurations, Content-Security-Policy headers) and will never suggest exploitation steps or unauthorized testing.
+

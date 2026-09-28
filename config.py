@@ -66,7 +66,18 @@ def is_target_allowed(target: str) -> bool:
     aliases = {host}
     if host in {"localhost", "127.0.0.1"}:
         aliases.update({"localhost", "127.0.0.1"})
-    return bool(aliases & allowed)
+    if bool(aliases & allowed):
+        return True
+    
+    # Check if domain has been ownership-verified
+    try:
+        from verification.verify import is_domain_verified
+        if is_domain_verified(host):
+            return True
+    except Exception:
+        pass
+
+    return False
 
 
 def require_allowed_target(target: str) -> str:

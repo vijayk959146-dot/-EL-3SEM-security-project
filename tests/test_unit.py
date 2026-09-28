@@ -150,6 +150,144 @@ class TestSecurityPipeline(unittest.TestCase):
         self.assertEqual(http_check.cors_issues, [])
         self.assertEqual(http_check.version_disclosure_issues, [])
 
+    # 6. SSRF IP validation tests
+    def test_ssrf_ip_validation_rejection(self):
+        from discovery.safe_fetch import is_ip_allowed_for_public_fetch
+        
+        # Cloud metadata (AWS/GCP/Azure link-local 169.254.169.254)
+        self.assertFalse(is_ip_allowed_for_public_fetch("169.254.169.254"))
+
+        # Private RFC1918
+        self.assertFalse(is_ip_allowed_for_public_fetch("10.0.0.1"))
+        self.assertFalse(is_ip_allowed_for_public_fetch("172.16.50.1"))
+        self.assertFalse(is_ip_allowed_for_public_fetch("192.168.1.254"))
+
+        # Loopback
+        self.assertFalse(is_ip_allowed_for_public_fetch("127.0.0.1"))
+        self.assertFalse(is_ip_allowed_for_public_fetch("::1"))
+
+        # Public IP should pass
+        self.assertTrue(is_ip_allowed_for_public_fetch("93.184.216.34"))
+        self.assertTrue(is_ip_allowed_for_public_fetch("8.8.8.8"))
+
+    # 7. safe_fetch validation (rejecting metadata, private targets, and bad schemes)
+    def test_safe_fetch_blocks_private_and_metadata(self):
+        from discovery.safe_fetch import safe_fetch, SafeFetchError
+
+        # Cloud metadata
+        with self.assertRaises(SafeFetchError):
+            safe_fetch("http://169.254.169.254/latest/meta-data")
+
+        # Local loopback
+        with self.assertRaises(SafeFetchError):
+            safe_fetch("http://127.0.0.1:80/")
+
+        # Unsupported protocol scheme
+        with self.assertRaises(SafeFetchError):
+            safe_fetch("ftp://example.com/")
+
+    # 8. SSRF Redirect re-validation test
+    def test_safe_fetch_redirect_revalidation(self):
+        from discovery.safe_fetch import safe_fetch, SafeFetchError
+        import requests
+
+        # Mock a response that redirects to 169.254.169.254
+        mock_redirect_resp = MagicMock()
+        mock_redirect_resp.status_code = 302
+        mock_redirect_resp.headers = {"Location": "http://169.254.169.254/latest/meta-data"}
+
+        with patch("discovery.safe_fetch.requests.Session.send", return_value=mock_redirect_resp):
+            with patch("discovery.safe_fetch.resolve_and_validate_hostname", return_value=["93.184.216.34"]):
+                # Should fail when attempting to follow redirect to cloud metadata
+                with self.assertRaises(SafeFetchError):
+                    safe_fetch("https://example.com/redirect-to-metadata")
+
+    # 9. Verification expiry & lifecycle
+    def test_verification_lifecycle_and_expiry(self):
+        import time
+        from verification.verify import is_domain_verified
+
+        test_domain = "unit-test-domain.org"
+        
+        # Expired record (expired 100 seconds ago)
+        records_expired = {
+            test_domain: {
+                "token": "tok_123",
+                "verified": True,
+                "method": "dns-txt",
+                "created_at": time.time() - 3600 * 24 * 31,
+                "verified_at": time.time() - 3600 * 24 * 31,
+                "expires_at": time.time() - 100,
+            }
+        }
+        with patch("verification.verify._load_verified_data", return_value=records_expired):
+            self.assertFalse(is_domain_verified(test_domain))
+
+        # Active valid record (expires in 30 days)
+        records_valid = {
+            test_domain: {
+                "token": "tok_123",
+                "verified": True,
+                "method": "dns-txt",
+                "created_at": time.time(),
+                "verified_at": time.time(),
+                "expires_at": time.time() + 3600 * 24 * 30,
+            }
+        }
+        with patch("verification.verify._load_verified_data", return_value=records_valid):
+            self.assertTrue(is_domain_verified(test_domain))
+            self.assertTrue(is_target_allowed(test_domain))
+
+    # 10. Guard fail-closed and unverified domain isolation from active scans
+    def test_unverified_domain_never_reaches_active_path(self):
+        from schemas import TlsGrade
+        unverified_host = "unverified-external-site.com"
+        
+        # Verify guard blocks it
+        self.assertFalse(is_target_allowed(unverified_host))
+        with self.assertRaises(PermissionError):
+            require_allowed_target(unverified_host)
+
+        # Test pipeline routing ensures unverified targets use passive discovery only
+        from run_pipeline import run_target
+        with patch("run_pipeline.discover_passive") as mock_passive, \
+             patch("run_pipeline.discover") as mock_active, \
+             patch("run_pipeline.correlate") as mock_correlate, \
+             patch("run_pipeline.prioritize") as mock_prioritize, \
+             patch("run_pipeline.write_json"), \
+             patch("run_pipeline.save_run_history"):
+
+            mock_passive.return_value = DiscoveredAssets(
+                target=unverified_host,
+                scan_method="passive-osint",
+                ports=[],
+                http=HttpCheck(url=f"https://{unverified_host}", reachable=True, status_code=200, title="T", uses_tls=True),
+                tls=TlsGrade(skipped=True, reason="passive"),
+                mode="passive"
+            )
+            mock_correlate.return_value = CorrelatedFindings(target=unverified_host, assets=[], mode="passive")
+            mock_prioritize.return_value = PrioritizedReport(
+                target=unverified_host,
+                model_id="heuristic",
+                used_llm=False,
+                findings=[],
+                summary="s",
+                top_risks=[],
+                notes=[],
+                mode="passive",
+            )
+
+            # Execute run_target on unverified domain
+            run_target(unverified_host, [80, 443])
+
+            # Passive discovery MUST be called
+            mock_passive.assert_called_once_with(unverified_host)
+            # Active discovery (Nmap/port probing) MUST NOT be called
+            mock_active.assert_not_called()
+
+
 
 if __name__ == "__main__":
     unittest.main()
+
+

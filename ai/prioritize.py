@@ -16,7 +16,11 @@ from schemas import PrioritizedFinding, PrioritizedReport
 from storage import read_json, write_json
 
 SYSTEM_RULES = """You are a defensive security explainer for a college lab.
-You receive correlated attack-surface + public CVE data for a target the user owns.
+You receive correlated attack-surface + public CVE data for a target.
+
+Operational Modes:
+- ACTIVE: Scanning performed on verified/allowlisted hosts.
+- PASSIVE: Public OSINT reconnaissance (DNS, headers, CT logs). For passive targets, never recommend or imply active exploitation or port probing without verified domain ownership.
 
 Security terms reference:
 - KEV (CISA Known Exploited Vulnerabilities): Actively exploited in the wild. Prioritize these above theoretical CVEs.
@@ -214,6 +218,7 @@ def _heuristic_report(correlated: dict) -> PrioritizedReport:
         findings=findings,
         model_id="heuristic-fallback",
         used_llm=False,
+        mode=correlated.get("mode", "active"),
         notes=["Bedrock was not used; results are prioritized by KEV/EPSS/CVSS heuristics."],
     )
 
@@ -241,6 +246,7 @@ def _from_llm_dict(correlated: dict, data: dict, used_llm: bool, note: str = "")
         findings=findings,
         model_id=BEDROCK_MODEL_ID if used_llm else "heuristic-fallback",
         used_llm=used_llm,
+        mode=correlated.get("mode", "active"),
         notes=notes,
     )
 

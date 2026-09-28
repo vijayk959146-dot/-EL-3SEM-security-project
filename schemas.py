@@ -55,6 +55,8 @@ class DiscoveredAssets:
     ports: list[OpenPort]
     http: HttpCheck | None
     tls: TlsGrade
+    mode: str = "active"  # "active" or "passive"
+    passive_meta: dict[str, Any] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -99,6 +101,7 @@ class CorrelatedAsset:
 class CorrelatedFindings:
     target: str
     assets: list[CorrelatedAsset]
+    mode: str = "active"  # "active" or "passive"
     notes: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -125,6 +128,7 @@ class PrioritizedReport:
     findings: list[PrioritizedFinding]
     model_id: str
     used_llm: bool
+    mode: str = "active"  # "active" or "passive"
     notes: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
