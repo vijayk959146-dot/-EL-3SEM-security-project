@@ -1,0 +1,38 @@
+name: Deploy to AWS Elastic Beanstalk
+
+on:
+  push:
+    branches: [main, master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run Test Suite
+        run: |
+          pip install -r requirements.txt
+          python -m unittest discover -s tests -v
+
+      - name: Generate Deployment Zip Package
+        run: |
+          zip -r deploy.zip Dockerfile requirements.txt config.py schemas.py storage.py run_pipeline.py verify_access.py targets.allowlist ai correlation dashboard data discovery tests verification
+
+      - name: Deploy to Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v22
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          application_name: attack-surface-tool
+          environment_name: attack-surface-tool-env
+          version_label: "deploy-${{ github.sha }}"
+          region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          deployment_package: deploy.zip
+          wait_for_deployment: true
