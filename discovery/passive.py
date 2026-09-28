@@ -135,7 +135,7 @@ def _probe_passive_http(domain: str) -> HttpCheck:
 
 
 def _inspect_passive_tls(domain: str) -> TlsGrade:
-    """Inspect the public TLS certificate on port 443 safely."""
+    """Inspect the public TLS certificate on port 443 safely using pinned IP connection."""
     raw_info: dict[str, Any] = {
         "reachable": False,
         "protocol": "",
@@ -145,9 +145,21 @@ def _inspect_passive_tls(domain: str) -> TlsGrade:
         "issues": [],
     }
 
+    try:
+        from discovery.safe_fetch import resolve_and_validate_hostname
+        validated_ips = resolve_and_validate_hostname(domain)
+        pinned_ip = validated_ips[0]
+    except Exception as exc:
+        return TlsGrade(
+            skipped=True,
+            reason=f"Passive TLS resolution aborted: {exc}",
+            host=domain,
+            raw={"error": str(exc)},
+        )
+
     ctx = ssl.create_default_context()
     try:
-        with socket.create_connection((domain, 443), timeout=5.0) as sock:
+        with socket.create_connection((pinned_ip, 443), timeout=5.0) as sock:
             with ctx.wrap_socket(sock, server_hostname=domain) as ssock:
                 raw_info["reachable"] = True
                 raw_info["protocol"] = ssock.version() or ""
@@ -160,9 +172,9 @@ def _inspect_passive_tls(domain: str) -> TlsGrade:
                         days_left = (exp_dt - datetime.datetime.utcnow()).days
                         raw_info["days_until_expiry"] = days_left
                         if days_left < 0:
-                            raw_info["issues"].append("tls-expired: TLS certificate has expired")
+                            raw_info["issues"].append("tls-cert-expired: Public TLS certificate has expired")
                         elif days_left < 15:
-                            raw_info["issues"].append(f"tls-expiring-soon: TLS certificate expires in {days_left} days")
+                            raw_info["issues"].append(f"tls-cert-expiring-soon: Public TLS certificate expires in {days_left} days")
 
                     # Extract subject and issuer
                     issuer_dict = dict(x[0] for x in cert.get("issuer", ()))
@@ -171,7 +183,7 @@ def _inspect_passive_tls(domain: str) -> TlsGrade:
                     raw_info["subject"] = subject_dict.get("commonName", "")
 
                     if raw_info["issuer"] == raw_info["subject"] and raw_info["issuer"]:
-                        raw_info["issues"].append("tls-self-signed: Self-signed certificate detected")
+                        raw_info["issues"].append("tls-self-signed: Public TLS certificate is self-signed")
 
         return TlsGrade(
             skipped=False,

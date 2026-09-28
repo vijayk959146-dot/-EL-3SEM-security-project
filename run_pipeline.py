@@ -15,7 +15,7 @@ from config import DEFAULT_PORTS, DEFAULT_TARGET, is_target_allowed, require_all
 from correlation.correlate import correlate
 from discovery.passive import discover_passive
 from discovery.run import discover
-from storage import save_run_history, write_json
+from storage import save_run_history, target_data_dir, write_json
 
 
 def run_target(host: str, ports: list[int], force_passive: bool = False) -> None:
@@ -57,9 +57,13 @@ def run_target(host: str, ports: list[int], force_passive: bool = False) -> None
         reason_msg = fallback_reasons[-1] if fallback_reasons else "CVSS heuristic ranking"
         print(f"      [NOTE] Bedrock not reached; used CVSS heuristic fallback. ({reason_msg})")
 
-    # Save target-specific report and timestamped history
-    write_json(f"report_{host.replace(':', '_')}.json", report)
+    # Save target-specific report and timestamped history — both inside data/<target>/
+    report_path = write_json("prioritized_report.json", report, target=host)
+    write_json("discovered_assets.json", assets, target=host)
+    write_json("correlated_findings.json", correlated, target=host)
     hist_path = save_run_history(host, report.to_dict())
+    out_dir = target_data_dir(host)
+    print(f"[+] Results written to {out_dir}")
     print(f"[+] Archived historical run to {hist_path.name}")
 
 

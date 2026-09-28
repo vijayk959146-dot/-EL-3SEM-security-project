@@ -7,9 +7,11 @@ to a host. That keeps this tool from being used as a general scanner.
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -36,15 +38,55 @@ NVD_API_KEY = os.getenv("NVD_API_KEY", "").strip()
 
 
 def _normalize_host(raw: str) -> str:
-    """Turn 'http://localhost:3000' into 'localhost' (lowercase, no brackets)."""
-    value = (raw or "").strip().lower()
-    value = re.sub(r"^https?://", "", value)
-    value = value.split("/")[0]
-    value = value.split(":")[0]
-    value = value.strip("[]")
-    if value in {"::1", "0:0:0:0:0:0:0:1"}:
-        return "::1"
-    return value
+    """
+    Turn URLs, host:port strings, bracketed IPv6, and trailing-dot hostnames
+    into a canonical lowercase hostname or compressed IP address.
+    
+    Examples:
+    - '::1' -> '::1'
+    - '[::1]:3000' -> '::1'
+    - 'http://[::1]:3000/path' -> '::1'
+    - '127.0.0.1:3000' -> '127.0.0.1'
+    - 'LOCALHOST:3000' -> 'localhost'
+    - 'example.com.' -> 'example.com'
+    """
+    val = (raw or "").strip()
+    if not val:
+        return ""
+
+    if "://" in val:
+        try:
+            parsed = urlparse(val)
+            host = parsed.hostname or ""
+        except Exception:
+            host = ""
+    elif "/" in val:
+        try:
+            parsed = urlparse(f"http://{val}")
+            host = parsed.hostname or ""
+        except Exception:
+            host = ""
+    else:
+        if val.startswith("[") and "]" in val:
+            bracket_end = val.find("]")
+            host = val[1:bracket_end]
+        elif ":" in val and val.count(":") == 1:
+            host, _, _ = val.partition(":")
+        else:
+            host = val
+
+    host = host.strip().lower().rstrip(".")
+    if not host:
+        return ""
+
+    # Validate / compress IP addresses
+    try:
+        ip_obj = ipaddress.ip_address(host)
+        return ip_obj.compressed
+    except ValueError:
+        pass
+
+    return host
 
 
 def load_allowlist() -> set[str]:
@@ -56,16 +98,20 @@ def load_allowlist() -> set[str]:
     for line in ALLOWLIST_PATH.read_text(encoding="utf-8").splitlines():
         line = line.split("#", 1)[0].strip()
         if line:
-            allowed.add(_normalize_host(line))
+            norm = _normalize_host(line)
+            if norm:
+                allowed.add(norm)
     return allowed
 
 
 def is_target_allowed(target: str) -> bool:
     host = _normalize_host(target)
+    if not host:
+        return False
     allowed = load_allowlist()
     aliases = {host}
-    if host in {"localhost", "127.0.0.1"}:
-        aliases.update({"localhost", "127.0.0.1"})
+    if host in {"localhost", "127.0.0.1", "::1"}:
+        aliases.update({"localhost", "127.0.0.1", "::1"})
     if bool(aliases & allowed):
         return True
     

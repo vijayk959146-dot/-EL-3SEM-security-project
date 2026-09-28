@@ -8,6 +8,8 @@ Security terms explained for 3rd semester students:
   that exposes sensitive IAM credentials and instance metadata.
 - DNS Rebinding: An attack where a domain's DNS response rapidly changes from a public IP
   to an internal IP (like 127.0.0.1) between validation and connection.
+- SNI (Server Name Indication): A TLS extension indicating which hostname the client
+  is connecting to at the start of the TLS handshake.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from typing import Any
 
 import requests
 import urllib3
+from urllib3.poolmanager import PoolManager
 
 # Suppress insecure request warnings on loopback only
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -36,6 +39,44 @@ MIN_DOMAIN_INTERVAL = 1.0  # At least 1 second between requests to the same doma
 class SafeFetchError(Exception):
     """Raised when an outbound request violates SSRF or security constraints."""
     pass
+
+
+class PinnedIPAdapter(requests.adapters.HTTPAdapter):
+    """
+    Custom HTTP transport adapter that routes TCP connections to a validated IP
+    while preserving the original hostname for SNI, TLS certificate validation, and Host header.
+    This guarantees immunity against DNS rebinding attacks.
+    """
+
+    def __init__(self, hostname: str, pinned_ip: str, *args: Any, **kwargs: Any) -> None:
+        self.hostname = hostname
+        self.pinned_ip = pinned_ip
+        super().__init__(*args, **kwargs)
+
+    def init_poolmanager(self, connections: int, maxsize: int, block: bool = False, **pool_kwargs: Any) -> None:
+        pool_kwargs["server_hostname"] = self.hostname
+        pool_kwargs["assert_hostname"] = self.hostname
+        self.poolmanager = PoolManager(
+            num_pools=connections,
+            maxsize=maxsize,
+            block=block,
+            **pool_kwargs,
+        )
+
+    def get_connection(self, url: str, proxies: Any = None) -> Any:
+        parsed = urlparse(url)
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        conn = self.poolmanager.connection_from_host(
+            self.pinned_ip,
+            port=port,
+            scheme=parsed.scheme,
+            pool_kwargs={
+                "server_hostname": self.hostname,
+                "assert_hostname": self.hostname,
+            },
+        )
+        conn.assert_hostname = self.hostname
+        return conn
 
 
 def is_ip_allowed_for_public_fetch(ip_str: str) -> bool:
@@ -118,7 +159,7 @@ def safe_fetch(
 ) -> requests.Response:
     """
     Execute a secure HTTP request protected against SSRF, DNS rebinding,
-    oversized payloads, and redirect abuse.
+    oversized payloads, and redirect abuse with strict IP connection pinning.
     """
     current_url = url.strip()
     redirect_count = 0
@@ -134,7 +175,7 @@ def safe_fetch(
         if scheme not in {"http", "https"}:
             raise SafeFetchError(f"Disallowed protocol scheme: '{scheme}'. Only HTTP and HTTPS are permitted.")
 
-        # 2. Port validation: Only 80, 443, or standard ports
+        # 2. Port validation: Only standard web ports
         port = parsed.port
         if port is not None and port not in {80, 443, 8080, 8443}:
             raise SafeFetchError(f"Disallowed target port: {port}. Only standard web ports (80, 443, 8080, 8443) allowed.")
@@ -143,12 +184,13 @@ def safe_fetch(
         if not hostname:
             raise SafeFetchError(f"Invalid URL: Missing hostname in '{current_url}'.")
 
-        # 3. Domain & IP validation
+        # 3. Domain & IP validation + Pinning
         is_loopback_host = hostname in {"localhost", "127.0.0.1", "::1"}
         if not (allow_loopback_for_testing and is_loopback_host):
             validated_ips = resolve_and_validate_hostname(hostname)
+            pinned_ip = validated_ips[0]
         else:
-            validated_ips = ["127.0.0.1"]
+            pinned_ip = "127.0.0.1"
 
         # 4. Rate Limiting per domain
         now = time.time()
@@ -157,11 +199,14 @@ def safe_fetch(
             time.sleep(MIN_DOMAIN_INTERVAL - (now - last_req))
         _DOMAIN_RATE_LIMITS[hostname] = time.time()
 
-        # 5. Execute request with stream=True to cap response size
+        # 5. Execute request pinned to validated IP
         try:
             session = requests.Session()
             session.max_redirects = 0  # Disable automatic redirects to re-validate on each hop
-            
+            adapter = PinnedIPAdapter(hostname=hostname, pinned_ip=pinned_ip)
+            session.mount("https://", adapter)
+            session.mount("http://", adapter)
+
             response = session.request(
                 method=method,
                 url=current_url,
@@ -179,11 +224,11 @@ def safe_fetch(
             redirect_count += 1
             if redirect_count > MAX_REDIRECTS:
                 raise SafeFetchError(f"Exceeded maximum allowed redirects ({MAX_REDIRECTS}).")
-            
+
             location = response.headers.get("Location")
             if not location:
                 break  # No location header; return current response
-            
+
             current_url = urljoin(current_url, location)
             continue
 
@@ -193,7 +238,8 @@ def safe_fetch(
             content.extend(chunk)
             if len(content) > max_bytes:
                 raise SafeFetchError(f"Response body exceeded maximum allowed size ({max_bytes} bytes).")
-        
+
         # Populate response with capped content
         response._content = bytes(content)
         return response
+

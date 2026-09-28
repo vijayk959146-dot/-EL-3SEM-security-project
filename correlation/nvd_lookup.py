@@ -26,26 +26,46 @@ from schemas import CveRecord
 NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 USER_AGENT = "ai-attack-surface-tool/1.0 (academic EL project)"
 CACHE_DIR = DATA_DIR / "cache" / "nvd"
+CACHE_TTL_SECONDS = 60 * 60 * 72  # 72 hours — NVD updates ~daily
 
 
 def _get_cache(cache_key: str) -> list[dict[str, Any]] | None:
-    """Read cached NVD JSON response from disk if present."""
+    """Read cached NVD JSON from disk if present, valid, and not stale.
+
+    Returns ``None`` for missing, corrupt, or expired cache entries so
+    the caller always falls back to a fresh NVD query.
+    """
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_file = CACHE_DIR / f"{cache_key}.json"
-    if cache_file.exists():
-        try:
-            return json.loads(cache_file.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+    if not cache_file.exists():
+        return None
+    try:
+        wrapper = json.loads(cache_file.read_text(encoding="utf-8"))
+        # Validate expected structure
+        if not isinstance(wrapper, dict) or "cached_at" not in wrapper or "records" not in wrapper:
+            cache_file.unlink(missing_ok=True)  # Delete corrupt entry
             return None
-    return None
+        age = time.time() - float(wrapper["cached_at"])
+        if age > CACHE_TTL_SECONDS:
+            cache_file.unlink(missing_ok=True)  # Delete stale entry
+            return None
+        records = wrapper["records"]
+        if not isinstance(records, list):
+            cache_file.unlink(missing_ok=True)
+            return None
+        return records
+    except (json.JSONDecodeError, OSError, ValueError, KeyError):
+        cache_file.unlink(missing_ok=True)  # Delete corrupt entry
+        return None
 
 
 def _set_cache(cache_key: str, data: list[dict[str, Any]]) -> None:
-    """Write NVD results to disk cache to avoid redundant API hits."""
+    """Write NVD results to disk cache with a creation timestamp."""
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_file = CACHE_DIR / f"{cache_key}.json"
+    wrapper = {"cached_at": time.time(), "records": data}
     try:
-        cache_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        cache_file.write_text(json.dumps(wrapper, indent=2), encoding="utf-8")
     except OSError:
         pass
 
@@ -120,14 +140,23 @@ def _query_nvd_api(params: dict[str, str], query_identifier: str, confidence: st
     if NVD_API_KEY:
         headers["apiKey"] = NVD_API_KEY
 
-    response = requests.get(NVD_URL, headers=headers, params=params, timeout=30)
-    if response.status_code == 429:
-        # Rate limit hit — wait politely before retry
-        time.sleep(8)
-        response = requests.get(NVD_URL, headers=headers, params=params, timeout=30)
-    response.raise_for_status()
+    def _fetch_once() -> dict:
+        with requests.get(NVD_URL, headers=headers, params=params, timeout=30) as resp:
+            resp.raise_for_status()
+            return resp.json()
 
-    payload = response.json()
+    try:
+        try:
+            payload = _fetch_once()
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 429:
+                time.sleep(8)
+                payload = _fetch_once()
+            else:
+                raise
+    except requests.RequestException:
+        raise  # Let caller handle the network failure
+
     records = _parse_nvd_payload(payload, query_identifier, confidence)
 
     # Save to disk cache

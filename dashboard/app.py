@@ -30,23 +30,49 @@ SEVERITY_COLORS = {
 
 st.set_page_config(page_title="AI Attack Surface Correlation", layout="wide", initial_sidebar_state="expanded")
 
+import hmac
+import time as _time
+
 # 1. Optional Password Protection
 DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "").strip()
+_MAX_LOGIN_ATTEMPTS = 5
+_LOCKOUT_SECONDS = 30
+
 if DASHBOARD_PASSWORD:
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
+    if "login_attempts" not in st.session_state:
+        st.session_state.login_attempts = 0
+    if "lockout_until" not in st.session_state:
+        st.session_state.lockout_until = 0.0
 
     if not st.session_state.authenticated:
         st.title("🔒 Security Dashboard Login")
         st.caption("This dashboard is password-protected by the DASHBOARD_PASSWORD environment variable.")
-        pwd = st.text_input("Enter Dashboard Password", type="password")
-        if st.button("Log In"):
-            if pwd == DASHBOARD_PASSWORD:
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("Incorrect password.")
+
+        now = _time.monotonic()
+        locked = now < st.session_state.lockout_until
+        if locked:
+            remaining = int(st.session_state.lockout_until - now)
+            st.error(f"Too many failed attempts. Try again in {remaining} seconds.")
+        else:
+            pwd = st.text_input("Enter Dashboard Password", type="password", key="login_pwd_input")
+            if st.button("Log In", key="login_btn"):
+                # constant-time comparison — immune to timing oracle attacks
+                if hmac.compare_digest(pwd.encode("utf-8"), DASHBOARD_PASSWORD.encode("utf-8")):
+                    st.session_state.authenticated = True
+                    st.session_state.login_attempts = 0
+                    st.rerun()
+                else:
+                    st.session_state.login_attempts += 1
+                    if st.session_state.login_attempts >= _MAX_LOGIN_ATTEMPTS:
+                        st.session_state.lockout_until = _time.monotonic() + _LOCKOUT_SECONDS
+                        st.error(f"Too many failed attempts. Locked for {_LOCKOUT_SECONDS} seconds.")
+                    else:
+                        remaining_attempts = _MAX_LOGIN_ATTEMPTS - st.session_state.login_attempts
+                        st.error(f"Incorrect password. {remaining_attempts} attempt(s) remaining.")
         st.stop()
+
 
 
 def _load_report() -> dict:
@@ -144,6 +170,8 @@ target = report.get("target") or "Unknown"
 mode = report.get("mode") or ("active" if target in get_target_allowlist() or is_domain_verified(target) else "passive")
 
 # Mode Badge
+import html
+
 if target in get_target_allowlist():
     mode_badge = "🧪 Local Lab (Active Probing Allowed)"
     badge_color = "#3b82f6"
@@ -154,9 +182,10 @@ else:
     mode_badge = "🌐 Passive OSINT (Read-Only, Zero Active Probing)"
     badge_color = "#8b5cf6"
 
+esc_mode_badge = html.escape(str(mode_badge), quote=True)
 st.markdown(
     f"<div style='display:inline-block;padding:4px 12px;border-radius:16px;background:{badge_color};color:white;font-weight:600;font-size:0.9rem;margin-bottom:12px;'>"
-    f"{mode_badge}</div>",
+    f"{esc_mode_badge}</div>",
     unsafe_allow_html=True,
 )
 
@@ -256,19 +285,14 @@ for item in findings:
     )
 st.dataframe(table_rows, use_container_width=True, hide_index=True)
 
-# Detailed Cards
+# Detailed Cards using native Streamlit widgets (no raw HTML injection)
 st.subheader("Defensive Remediation Cards")
 for item in sorted(findings, key=lambda f: int(f.get("rank") or 0)):
     severity = item.get("severity") or "Info"
-    color = SEVERITY_COLORS.get(severity, "#4b5563")
     header = f"#{item.get('rank', '?')} {item.get('title', 'Finding')} [{severity}]"
     
     with st.expander(header):
-        st.markdown(
-            f"<div style='padding:0.5rem 0.75rem;border-left:5px solid {color};background:#f9fafb;border-radius:4px;'>"
-            f"<b>Why It Matters:</b><br>{item.get('why_it_matters', '')}</div>",
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"**Why It Matters:**\n\n{item.get('why_it_matters', '')}")
         st.markdown(f"**Exploitability Context:** `{item.get('exploitability', '')}`")
         st.markdown(f"**Discovery Source:** `{item.get('source', '')}`")
         
@@ -278,11 +302,7 @@ for item in sorted(findings, key=lambda f: int(f.get("rank") or 0)):
 
         action = item.get("suggested_action", "")
         if action:
-            st.markdown(
-                f"<div style='margin-top:8px;padding:8px 12px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:4px;'>"
-                f"<b style='color:#065f46;'>🛡️ Recommended Defensive Fix:</b><br><code>{action}</code></div>",
-                unsafe_allow_html=True,
-            )
+            st.info(f"🛡️ **Recommended Defensive Fix:**\n\n`{action}`")
 
 # Pipeline Notes
 notes = report.get("notes") or []

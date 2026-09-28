@@ -7,41 +7,96 @@ from correlation.nvd_lookup import lookup_cves
 from schemas import CorrelatedAsset, CorrelatedFindings, CveRecord
 from storage import read_json, write_json
 
+# Real severity mapping for configuration issues.
+# Keys are lowercased substrings matched against the issue string;
+# first match wins, so order from most- to least-specific matters.
+_ISSUE_SEVERITY: list[tuple[str, str]] = [
+    # Actively exploitable or confidentiality risk
+    ("without tls encryption", "High"),
+    ("weak tls grade", "High"),
+    ("cors: wildcard", "High"),
+    ("server version disclosure", "Medium"),
+    # Missing security headers — ordered by impact
+    ("strict-transport-security", "High"),   # HSTS missing → downgrade possible
+    ("content-security-policy", "Medium"),   # CSP missing → XSS amplification
+    ("x-frame-options", "Medium"),           # XFO missing → clickjacking
+    ("x-content-type-options", "Low"),       # XCTO missing → MIME sniffing
+    ("referrer-policy", "Low"),              # cosmetic privacy header
+    ("permissions-policy", "Low"),           # feature policy, low urgency
+    # Cookie hygiene
+    ("cookie", "Medium"),
+    # DNS / email security
+    ("spf", "Medium"),
+    ("dmarc", "Medium"),
+    ("dns email security", "Medium"),
+    # Informational
+    ("certificate transparency", "Info"),
+    ("open tcp/", "Info"),
+]
+
+_DEFAULT_SEVERITY = "Medium"
+
+
+def _issue_severity(issue: str) -> str:
+    """Return the most appropriate severity label for a config-check issue."""
+    lower = issue.lower()
+    for keyword, sev in _ISSUE_SEVERITY:
+        if keyword in lower:
+            return sev
+    return _DEFAULT_SEVERITY
+
 
 def _load_discovered() -> dict:
     return read_json("discovered_assets.json")
 
 
-def _config_issues(discovered: dict) -> list[str]:
-    issues: list[str] = []
+def _config_issues(discovered: dict) -> list[tuple[str, str]]:
+    """Return a deduplicated list of (issue_text, severity) tuples.
+
+    Deduplication prevents multi-port scans from repeating the same
+    header findings for every open port.
+    """
+    seen: set[str] = set()
+    issues: list[tuple[str, str]] = []
+
+    def _add(text: str) -> None:
+        if text and text not in seen:
+            seen.add(text)
+            issues.append((text, _issue_severity(text)))
+
     for raw in discovered.get("ports") or []:
         port = raw.get("port")
         if raw.get("state") == "open" and port in {80, 443, 3000, 8000, 8080}:
-            issues.append(f"Open TCP/{port} web service on the lab host.")
+            _add(f"Open TCP/{port} web service on the lab host.")
+
     http = discovered.get("http") or {}
     if http.get("reachable") and not http.get("uses_tls"):
-        issues.append("Service is reachable over HTTP without TLS encryption.")
+        _add("Service is reachable over HTTP without TLS encryption.")
     for header in http.get("missing_security_headers") or []:
-        issues.append(f"Missing security header: {header}")
+        _add(f"Missing security header: {header}")
     for cookie_issue in http.get("cookie_issues") or []:
-        issues.append(cookie_issue)
+        _add(cookie_issue)
     for cors_issue in http.get("cors_issues") or []:
-        issues.append(cors_issue)
+        _add(cors_issue)
     for ver_issue in http.get("version_disclosure_issues") or []:
-        issues.append(ver_issue)
+        _add(ver_issue)
 
     tls = discovered.get("tls") or {}
     if not tls.get("skipped") and tls.get("grade") in {"C", "D", "E", "F", "T"}:
-        issues.append(f"Weak TLS grade from SSL Labs: {tls.get('grade')}")
+        _add(f"Weak TLS grade from SSL Labs: {tls.get('grade')}")
+
     # Passive DNS issues (SPF / DMARC)
     passive_dns_issues = discovered.get("passive_meta", {}).get("dns", {}).get("issues") or []
     for dns_issue in passive_dns_issues:
-        issues.append(f"DNS Email Security: {dns_issue}")
+        _add(f"DNS Email Security: {dns_issue}")
 
     # Passive CT subdomains summary note
     ct_subs = discovered.get("passive_meta", {}).get("ct_subdomains") or []
     if ct_subs:
-        issues.append(f"Certificate Transparency Mapping: Found {len(ct_subs)} associated subdomains (informational only; not scanned).")
+        _add(
+            f"Certificate Transparency Mapping: Found {len(ct_subs)} associated subdomains"
+            " (informational only; not scanned)."
+        )
 
     return issues
 
@@ -49,7 +104,10 @@ def _config_issues(discovered: dict) -> list[str]:
 def correlate(discovered: dict | None = None) -> CorrelatedFindings:
     discovered = discovered or _load_discovered()
     target = discovered.get("target", "")
-    shared_issues = _config_issues(discovered)
+    # shared_issues_rich is [(text, severity), ...]
+    shared_issues_rich = _config_issues(discovered)
+    # schemas.CorrelatedAsset.config_issues still accepts plain strings
+    shared_issues = [text for text, _ in shared_issues_rich]
     assets: list[CorrelatedAsset] = []
     seen_queries: dict[str, list[CveRecord]] = {}
 

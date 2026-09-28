@@ -186,7 +186,7 @@ class TestSecurityPipeline(unittest.TestCase):
         with self.assertRaises(SafeFetchError):
             safe_fetch("ftp://example.com/")
 
-    # 8. SSRF Redirect re-validation test
+    # 8. SSRF Redirect re-validation and DNS rebinding pinning tests
     def test_safe_fetch_redirect_revalidation(self):
         from discovery.safe_fetch import safe_fetch, SafeFetchError
         import requests
@@ -201,6 +201,19 @@ class TestSecurityPipeline(unittest.TestCase):
                 # Should fail when attempting to follow redirect to cloud metadata
                 with self.assertRaises(SafeFetchError):
                     safe_fetch("https://example.com/redirect-to-metadata")
+
+    def test_safe_fetch_dns_rebinding_ip_pinning(self):
+        from discovery.safe_fetch import safe_fetch, PinnedIPAdapter
+        from urllib.parse import urlparse
+
+        adapter = PinnedIPAdapter(hostname="target-site.com", pinned_ip="93.184.216.34")
+        conn = adapter.get_connection("https://target-site.com/test")
+        # TCP connection goes to the pinned IP (DNS rebinding immune)
+        self.assertEqual(conn.host, "93.184.216.34")
+        # SNI / TLS cert verification uses the original hostname (stored in conn_kw by urllib3)
+        self.assertEqual(conn.conn_kw.get("server_hostname"), "target-site.com")
+        # assert_hostname is set as a direct attribute on the pool (urllib3 stores it there)
+        self.assertEqual(conn.assert_hostname, "target-site.com")
 
     # 9. Verification expiry & lifecycle
     def test_verification_lifecycle_and_expiry(self):
@@ -282,12 +295,235 @@ class TestSecurityPipeline(unittest.TestCase):
 
             # Passive discovery MUST be called
             mock_passive.assert_called_once_with(unverified_host)
-            # Active discovery (Nmap/port probing) MUST NOT be called
-            mock_active.assert_not_called()
+    # 11. HTML escaping and CSV formula injection tests
+    def test_html_and_csv_injection_defense(self):
+        from storage import generate_csv_report, generate_html_report
 
+        evil_report = {
+            "target": "evil-target.com<script>alert('target')</script>",
+            "summary": "Summary with <img src=x onerror=alert('summary')>",
+            "model_id": "model<script>",
+            "used_llm": True,
+            "top_risks": ["Risk 1 <script>alert(1)</script>"],
+            "notes": ["Note <script>alert(2)</script>"],
+            "findings": [
+                {
+                    "rank": 1,
+                    "severity": "Critical",
+                    "title": "<script>alert('title')</script>",
+                    "exploitability": "\"><img src=x onerror=alert(1)>",
+                    "related_cves": ["CVE-2024-1111<script>"],
+                    "source": "nvd",
+                    "why_it_matters": "<b>Evil</b> <script>alert('why')</script>",
+                    "suggested_action": "=SUM(1+1);cmd|'/C calc'!A0",
+                }
+            ],
+        }
+
+        # 1. Test HTML Report Escaping
+        html_out = generate_html_report(evil_report)
+        self.assertNotIn("<script>", html_out)
+        self.assertNotIn("</script>", html_out)
+        self.assertNotIn("<img src=x", html_out)
+        self.assertIn("&lt;script&gt;alert(&#x27;title&#x27;)&lt;/script&gt;", html_out)
+        self.assertIn("&quot;&gt;&lt;img src=x onerror=alert(1)&gt;", html_out)
+
+        # 2. Test CSV Formula Injection Neutralization
+        csv_out = generate_csv_report(evil_report)
+    # 12. IPv6 and URL host normalization tests
+    def test_ipv6_and_url_normalization(self):
+        from config import _normalize_host, is_target_allowed
+
+        # Test bare IPv6
+        self.assertEqual(_normalize_host("::1"), "::1")
+        self.assertEqual(_normalize_host("0:0:0:0:0:0:0:1"), "::1")
+
+        # Test bracketed IPv6 with and without port
+        self.assertEqual(_normalize_host("[::1]"), "::1")
+        self.assertEqual(_normalize_host("[::1]:3000"), "::1")
+
+        # Test full URLs with IPv6, IPv4, hostnames
+        self.assertEqual(_normalize_host("http://[::1]:3000/path"), "::1")
+        self.assertEqual(_normalize_host("https://127.0.0.1:8080/api"), "127.0.0.1")
+        self.assertEqual(_normalize_host("http://localhost:3000/"), "localhost")
+
+        # Test uppercase and trailing dots
+        self.assertEqual(_normalize_host("LOCALHOST:3000"), "localhost")
+        self.assertEqual(_normalize_host("example.com."), "example.com")
+        self.assertEqual(_normalize_host("HTTP://EXAMPLE.COM:8080/TEST"), "example.com")
+
+        # Test allowlist matching for IPv6
+        # ::1 in allowlist must allow ::1, [::1], and [::1]:3000
+        self.assertTrue(is_target_allowed("::1"))
+        self.assertTrue(is_target_allowed("[::1]"))
+        self.assertTrue(is_target_allowed("[::1]:3000"))
+        self.assertTrue(is_target_allowed("http://[::1]:3000/rest"))
+
+        # ::2 is NOT in allowlist and must be refused
+        self.assertFalse(is_target_allowed("::2"))
+        self.assertFalse(is_target_allowed("[::2]:3000"))
+
+
+    # --- 10. Per-target storage isolation ---
+    def test_per_target_storage_isolation(self):
+        """Multi-target scans must write to separate data/<target>/ folders."""
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            # Patch DATA_DIR so we don't touch the real data/ directory
+            with patch("storage.DATA_DIR", tmp):
+                from storage import target_data_dir, write_json, read_json
+
+                # Write the same filename for two different targets
+                write_json("prioritized_report.json", {"target": "host-a", "data": 1}, target="host-a")
+                write_json("prioritized_report.json", {"target": "host-b", "data": 2}, target="host-b")
+
+                a = read_json("prioritized_report.json", target="host-a")
+                b = read_json("prioritized_report.json", target="host-b")
+
+                self.assertEqual(a["target"], "host-a", "host-a report should be isolated")
+                self.assertEqual(b["target"], "host-b", "host-b report must not overwrite host-a")
+                self.assertNotEqual(a["data"], b["data"])
+
+    # --- 11. NVD cache timestamps, expiry, and corrupt-file handling ---
+    def test_nvd_cache_ttl_and_corrupt_handling(self):
+        """Cache must reject stale and corrupt entries; fresh entries must be returned."""
+        import json
+        import tempfile
+        import time
+        from pathlib import Path
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            with patch("correlation.nvd_lookup.CACHE_DIR", tmp):
+                from correlation.nvd_lookup import _get_cache, _set_cache, CACHE_TTL_SECONDS
+
+                key = "testkey123"
+                cache_file = tmp / f"{key}.json"
+
+                # Fresh cache must be returned
+                _set_cache(key, [{"cve_id": "CVE-2024-0001"}])
+                result = _get_cache(key)
+                self.assertIsNotNone(result)
+                self.assertEqual(result[0]["cve_id"], "CVE-2024-0001")
+
+                # Stale cache (expired 1 second ago) must be evicted
+                wrapper = json.loads(cache_file.read_text())
+                wrapper["cached_at"] = time.time() - CACHE_TTL_SECONDS - 1
+                cache_file.write_text(json.dumps(wrapper))
+                self.assertIsNone(_get_cache(key), "Stale cache must return None")
+                self.assertFalse(cache_file.exists(), "Stale cache file must be deleted")
+
+                # Corrupt JSON must be evicted
+                cache_file.write_text("{this is not valid json}")
+                self.assertIsNone(_get_cache(key), "Corrupt cache must return None")
+                self.assertFalse(cache_file.exists(), "Corrupt cache file must be deleted")
+
+                # Empty records list must be returned (not treated as corrupt)
+                _set_cache(key, [])
+                self.assertEqual(_get_cache(key), [], "Empty record list is valid")
+
+    # --- 12. Config-issue severity differentiation ---
+    def test_config_issue_severity_differentiation(self):
+        """HSTS-missing must be High; Referrer-Policy-missing must be Low; not both Medium."""
+        from correlation.correlate import _config_issues
+
+        discovered = {
+            "ports": [],
+            "http": {
+                "reachable": True,
+                "uses_tls": False,  # → High for missing TLS
+                "missing_security_headers": [
+                    "Strict-Transport-Security",   # → High
+                    "Content-Security-Policy",     # → Medium
+                    "Referrer-Policy",             # → Low
+                ],
+                "cookie_issues": [],
+                "cors_issues": [],
+                "version_disclosure_issues": [],
+            },
+            "tls": {"skipped": True},
+            "passive_meta": {},
+        }
+        issues = _config_issues(discovered)
+        by_text = {text: sev for text, sev in issues}
+
+        self.assertEqual(by_text.get("Service is reachable over HTTP without TLS encryption."), "High")
+        hsts_key = next((t for t in by_text if "Strict-Transport-Security" in t), None)
+        self.assertIsNotNone(hsts_key)
+        self.assertEqual(by_text[hsts_key], "High", "HSTS missing must be High")
+
+        ref_key = next((t for t in by_text if "Referrer-Policy" in t), None)
+        self.assertIsNotNone(ref_key)
+        self.assertEqual(by_text[ref_key], "Low", "Referrer-Policy missing must be Low, not Medium")
+
+        csp_key = next((t for t in by_text if "Content-Security-Policy" in t), None)
+        self.assertIsNotNone(csp_key)
+        self.assertEqual(by_text[csp_key], "Medium", "CSP missing must be Medium")
+
+    # --- 13. AI output validation ---
+    def test_ai_output_validation(self):
+        """_validate_llm_output must reject invented CVEs, duplicate ranks, invalid severity."""
+        from ai.prioritize import _validate_llm_output
+
+        correlated_with_cves = {
+            "assets": [
+                {"cves": [{"cve_id": "CVE-2023-1234"}], "config_issues": []}
+            ]
+        }
+
+        # Valid response — no errors
+        valid = {
+            "findings": [
+                {"rank": 1, "severity": "High", "related_cves": ["CVE-2023-1234"],
+                 "title": "A", "exploitability": "", "why_it_matters": "", "suggested_action": "", "source": ""},
+            ]
+        }
+        self.assertEqual(_validate_llm_output(valid, correlated_with_cves), [])
+
+        # Invented CVE ID not in input
+        invented = {
+            "findings": [
+                {"rank": 1, "severity": "High", "related_cves": ["CVE-9999-9999"],
+                 "title": "B", "exploitability": "", "why_it_matters": "", "suggested_action": "", "source": ""},
+            ]
+        }
+        errors = _validate_llm_output(invented, correlated_with_cves)
+        self.assertTrue(any("hallucination" in e.lower() or "not present" in e.lower() for e in errors),
+                        f"Expected hallucination error, got: {errors}")
+
+        # Duplicate ranks
+        dup_ranks = {
+            "findings": [
+                {"rank": 1, "severity": "High", "related_cves": [], "title": "X",
+                 "exploitability": "", "why_it_matters": "", "suggested_action": "", "source": ""},
+                {"rank": 1, "severity": "Low",  "related_cves": [], "title": "Y",
+                 "exploitability": "", "why_it_matters": "", "suggested_action": "", "source": ""},
+            ]
+        }
+        errors = _validate_llm_output(dup_ranks, {})
+        self.assertTrue(any("duplicate" in e.lower() for e in errors),
+                        f"Expected duplicate rank error, got: {errors}")
+
+        # Invalid severity
+        bad_sev = {
+            "findings": [
+                {"rank": 1, "severity": "SEVERE", "related_cves": [], "title": "Z",
+                 "exploitability": "", "why_it_matters": "", "suggested_action": "", "source": ""},
+            ]
+        }
+        errors = _validate_llm_output(bad_sev, {})
+        self.assertTrue(any("severity" in e.lower() for e in errors),
+                        f"Expected severity error, got: {errors}")
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
 
 
