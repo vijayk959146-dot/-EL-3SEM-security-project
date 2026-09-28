@@ -35,8 +35,18 @@ import time as _time
 
 # 1. Optional Password Protection
 DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "").strip()
+ALLOW_ANONYMOUS_DASHBOARD = os.getenv("ALLOW_ANONYMOUS_DASHBOARD", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}
 _MAX_LOGIN_ATTEMPTS = 5
 _LOCKOUT_SECONDS = 30
+
+if not DASHBOARD_PASSWORD and not ALLOW_ANONYMOUS_DASHBOARD:
+    st.error("Dashboard access is disabled because DASHBOARD_PASSWORD is not configured.")
+    st.info("Set DASHBOARD_PASSWORD in the deployment environment, then reload the app.")
+    st.stop()
 
 if DASHBOARD_PASSWORD:
     if "authenticated" not in st.session_state:
