@@ -1,0 +1,11 @@
+version: 1.0
+runtime: python310
+build:
+  commands:
+    build:
+      - pip install -r requirements.txt
+run:
+  command: streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0
+  network:
+    port: 8501
+    env: APP_PORT
