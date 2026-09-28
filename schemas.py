@@ -23,7 +23,7 @@ class OpenPort:
 
 @dataclass
 class HttpCheck:
-    """Passive HTTP observations (headers / TLS presence). Not an exploit."""
+    """Passive HTTP observations (headers / TLS presence / cookie flags). Not an exploit."""
 
     url: str
     reachable: bool
@@ -31,6 +31,9 @@ class HttpCheck:
     title: str = ""
     uses_tls: bool = False
     missing_security_headers: list[str] = field(default_factory=list)
+    cookie_issues: list[str] = field(default_factory=list)
+    cors_issues: list[str] = field(default_factory=list)
+    version_disclosure_issues: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
 
@@ -60,13 +63,24 @@ class DiscoveredAssets:
 
 @dataclass
 class CveRecord:
-    """One public CVE from NVD, plus its CVSS score when present."""
+    """One public CVE from NVD, plus its CVSS score when present.
+    
+    Terms:
+      - CVE: Common Vulnerabilities and Exposures (unique public vulnerability ID)
+      - CVSS: Common Vulnerability Scoring System (0.0 to 10.0 severity score)
+      - KEV: CISA Known Exploited Vulnerabilities catalog (actively exploited in the wild)
+      - EPSS: Exploit Prediction Scoring System (probability 0.0 to 1.0 of exploitation in next 30 days)
+      - Confidence: "high" if matched via exact CPE banner; "low" if matched via loose keyword search
+    """
 
     cve_id: str
     description: str
     cvss_score: float | None
     severity: str
     source_query: str
+    confidence: str = "high"
+    kev: bool = False
+    epss: float | None = None
 
 
 @dataclass

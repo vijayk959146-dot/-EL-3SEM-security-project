@@ -1,21 +1,53 @@
 """
 Look up publicly known CVEs on the NVD (National Vulnerability Database).
 
-We send *product + version strings from banners*, never payloads. NVD returns
-JSON records. We keep a short description and the CVSS score when present.
+Security terms explained for 3rd semester students:
+- CVE (Common Vulnerabilities and Exposures): A standardized dictionary of known security flaws.
+- CVSS (Common Vulnerability Scoring System): A 0.0 - 10.0 scale measuring flaw severity.
+- CPE (Common Platform Enumeration): A structured naming scheme (e.g. cpe:2.3:a:apache:http_server:2.4.49)
+  used to identify specific application software and hardware versions unambiguously.
+- Confidence: CPE matches guarantee product+version match ("high" confidence).
+  Keyword searches match text loosely and may produce false positives ("low" confidence).
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
+from pathlib import Path
+from typing import Any
 
 import requests
 
-from config import NVD_API_KEY
+from config import DATA_DIR, NVD_API_KEY
 from schemas import CveRecord
 
 NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 USER_AGENT = "ai-attack-surface-tool/1.0 (academic EL project)"
+CACHE_DIR = DATA_DIR / "cache" / "nvd"
+
+
+def _get_cache(cache_key: str) -> list[dict[str, Any]] | None:
+    """Read cached NVD JSON response from disk if present."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_file = CACHE_DIR / f"{cache_key}.json"
+    if cache_file.exists():
+        try:
+            return json.loads(cache_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+    return None
+
+
+def _set_cache(cache_key: str, data: list[dict[str, Any]]) -> None:
+    """Write NVD results to disk cache to avoid redundant API hits."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_file = CACHE_DIR / f"{cache_key}.json"
+    try:
+        cache_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def _cvss_from_metrics(metrics: dict) -> tuple[float | None, str]:
@@ -44,17 +76,7 @@ def _severity_from_score(score: float) -> str:
     return "None"
 
 
-def _query_nvd(keyword: str, limit: int = 5) -> list[CveRecord]:
-    headers = {"User-Agent": USER_AGENT}
-    if NVD_API_KEY:
-        headers["apiKey"] = NVD_API_KEY
-    params = {"keywordSearch": keyword, "resultsPerPage": limit}
-    response = requests.get(NVD_URL, headers=headers, params=params, timeout=30)
-    if response.status_code == 429:
-        time.sleep(8)
-        response = requests.get(NVD_URL, headers=headers, params=params, timeout=30)
-    response.raise_for_status()
-    payload = response.json()
+def _parse_nvd_payload(payload: dict, source_query: str, confidence: str) -> list[CveRecord]:
     records: list[CveRecord] = []
     for item in payload.get("vulnerabilities") or []:
         cve = item.get("cve") or {}
@@ -68,27 +90,87 @@ def _query_nvd(keyword: str, limit: int = 5) -> list[CveRecord]:
                 description=(english or "")[:500],
                 cvss_score=score,
                 severity=severity,
-                source_query=keyword,
+                source_query=source_query,
+                confidence=confidence,
             )
         )
     return records
 
 
-def lookup_cves(product: str, version: str = "") -> list[CveRecord]:
+def _query_nvd_api(params: dict[str, str], query_identifier: str, confidence: str) -> list[CveRecord]:
+    # Check disk cache first
+    cache_key = hashlib.sha256(query_identifier.encode("utf-8")).hexdigest()[:16]
+    cached = _get_cache(cache_key)
+    if cached is not None:
+        return [
+            CveRecord(
+                cve_id=c["cve_id"],
+                description=c["description"],
+                cvss_score=c["cvss_score"],
+                severity=c["severity"],
+                source_query=c["source_query"],
+                confidence=c.get("confidence", confidence),
+                kev=c.get("kev", False),
+                epss=c.get("epss"),
+            )
+            for c in cached
+        ]
+
+    headers = {"User-Agent": USER_AGENT}
+    if NVD_API_KEY:
+        headers["apiKey"] = NVD_API_KEY
+
+    response = requests.get(NVD_URL, headers=headers, params=params, timeout=30)
+    if response.status_code == 429:
+        # Rate limit hit — wait politely before retry
+        time.sleep(8)
+        response = requests.get(NVD_URL, headers=headers, params=params, timeout=30)
+    response.raise_for_status()
+
+    payload = response.json()
+    records = _parse_nvd_payload(payload, query_identifier, confidence)
+
+    # Save to disk cache
+    _set_cache(cache_key, [r.__dict__ for r in records])
+    time.sleep(0.7 if NVD_API_KEY else 4.0)
+    return records
+
+
+def lookup_cves(product: str, version: str = "", cpe: str = "") -> list[CveRecord]:
+    """
+    Search NVD using CPE match first (high confidence), falling back to keyword search (low confidence).
+    """
     product = (product or "").strip()
     version = (version or "").strip()
-    if not product:
+    cpe = (cpe or "").strip()
+
+    if not product and not cpe:
         return []
+
+    # 1. Prefer structured CPE match if CPE string or product+version is available
+    if not cpe and product and version:
+        # Construct standard CPE 2.3 format: cpe:2.3:a:vendor:product:version:*:*:*:*:*:*:*
+        safe_prod = product.lower().replace(" ", "_")
+        cpe = f"cpe:2.3:a:{safe_prod}:{safe_prod}:{version}:*:*:*:*:*:*:*"
+
+    if cpe:
+        try:
+            results = _query_nvd_api({"cpeName": cpe, "resultsPerPage": "5"}, cpe, confidence="high")
+            if results:
+                return results
+        except requests.RequestException:
+            pass  # Fall through to keyword search on network/parsing error
+
+    # 2. Fallback to keyword search (marked as low confidence)
     keyword = f"{product} {version}".strip()
     try:
-        results = _query_nvd(keyword)
+        results = _query_nvd_api({"keywordSearch": keyword, "resultsPerPage": "5"}, keyword, confidence="low")
     except requests.RequestException:
         if version:
             try:
-                results = _query_nvd(product)
+                results = _query_nvd_api({"keywordSearch": product, "resultsPerPage": "5"}, product, confidence="low")
             except requests.RequestException:
                 return []
         else:
             return []
-    time.sleep(0.7 if NVD_API_KEY else 6.0)
     return results

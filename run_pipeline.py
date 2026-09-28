@@ -14,21 +14,14 @@ from ai.prioritize import prioritize
 from config import DEFAULT_PORTS, DEFAULT_TARGET, require_allowed_target
 from correlation.correlate import correlate
 from discovery.run import discover
+from storage import save_run_history, write_json
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="AI-assisted attack-surface correlation (allowlisted targets only)."
-    )
-    parser.add_argument("--target", default=DEFAULT_TARGET, help="Host to scan (must be allowlisted)")
-    parser.add_argument(
-        "--ports",
-        default=",".join(str(p) for p in DEFAULT_PORTS),
-        help="Comma-separated TCP ports",
-    )
-    args = parser.parse_args()
-    host = require_allowed_target(args.target)
-    ports = [int(p.strip()) for p in args.ports.split(",") if p.strip().isdigit()]
+def run_target(host: str, ports: list[int]) -> None:
+    """Execute the defensive 3-stage pipeline for a single allowlisted target."""
+    print(f"\n=======================================================")
+    print(f"[*] Starting Security Pipeline for Target: {host}")
+    print(f"=======================================================")
 
     print(f"[1/3] Discovering {host} ports={ports} ...")
     assets = discover(host, ports)
@@ -36,10 +29,11 @@ def main() -> None:
     if "fallback" in assets.scan_method:
         print("      [NOTE] Nmap binary not found in PATH; used TCP connect fallback scan.")
 
-    print("[2/3] Correlating with NVD ...")
+    print("[2/3] Correlating with NVD, CISA KEV, and FIRST EPSS ...")
     correlated = correlate(assets.to_dict())
     cve_count = sum(len(a.cves) for a in correlated.assets)
-    print(f"      assets: {len(correlated.assets)}  CVE hits: {cve_count}")
+    kev_count = sum(1 for a in correlated.assets for c in a.cves if getattr(c, "kev", False) or (isinstance(c, dict) and c.get("kev")))
+    print(f"      assets: {len(correlated.assets)}  CVE hits: {cve_count}  (KEV exploited: {kev_count})")
 
     print("[3/3] Prioritizing with Bedrock (fallback if needed) ...")
     report = prioritize(correlated.to_dict())
@@ -49,8 +43,38 @@ def main() -> None:
         reason_msg = fallback_reasons[-1] if fallback_reasons else "CVSS heuristic ranking"
         print(f"      [NOTE] Bedrock not reached; used CVSS heuristic fallback. ({reason_msg})")
 
-    print("Wrote data/discovered_assets.json, correlated_findings.json, prioritized_report.json")
-    print("Dashboard: streamlit run dashboard/app.py")
+    # Save target-specific report and timestamped history
+    write_json(f"report_{host.replace(':', '_')}.json", report)
+    hist_path = save_run_history(host, report.to_dict())
+    print(f"[+] Archived historical run to {hist_path.name}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="AI-assisted attack-surface correlation (allowlisted targets only)."
+    )
+    parser.add_argument("--target", default=None, help="Single host to scan (must be allowlisted)")
+    parser.add_argument("--targets", default=None, help="Comma-separated list of hosts to scan (e.g. localhost,127.0.0.1)")
+    parser.add_argument(
+        "--ports",
+        default=",".join(str(p) for p in DEFAULT_PORTS),
+        help="Comma-separated TCP ports",
+    )
+    args = parser.parse_args()
+    
+    # Resolve targets list
+    target_str = args.targets or args.target or DEFAULT_TARGET
+    raw_targets = [t.strip() for t in target_str.split(",") if t.strip()]
+    ports = [int(p.strip()) for p in args.ports.split(",") if p.strip().isdigit()]
+
+    # Validate all targets against allowlist before scanning
+    validated_hosts = [require_allowed_target(t) for t in raw_targets]
+
+    for host in validated_hosts:
+        run_target(host, ports)
+
+    print("\n[+] Scan complete. Data written to data/ and data/history/")
+    print("[+] Dashboard: streamlit run dashboard/app.py")
 
 
 if __name__ == "__main__":

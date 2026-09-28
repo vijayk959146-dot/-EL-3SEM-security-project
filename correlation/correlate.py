@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from correlation.enrich import enrich_cves
 from correlation.nvd_lookup import lookup_cves
 from schemas import CorrelatedAsset, CorrelatedFindings, CveRecord
 from storage import read_json, write_json
@@ -22,9 +23,21 @@ def _config_issues(discovered: dict) -> list[str]:
         issues.append("Service is reachable over HTTP without TLS encryption.")
     for header in http.get("missing_security_headers") or []:
         issues.append(f"Missing security header: {header}")
+    for cookie_issue in http.get("cookie_issues") or []:
+        issues.append(cookie_issue)
+    for cors_issue in http.get("cors_issues") or []:
+        issues.append(cors_issue)
+    for ver_issue in http.get("version_disclosure_issues") or []:
+        issues.append(ver_issue)
+
     tls = discovered.get("tls") or {}
     if not tls.get("skipped") and tls.get("grade") in {"C", "D", "E", "F", "T"}:
         issues.append(f"Weak TLS grade from SSL Labs: {tls.get('grade')}")
+    # Local TLS issues
+    local_tls_issues = tls.get("raw", {}).get("local", {}).get("issues") if isinstance(tls.get("raw"), dict) else []
+    for local_issue in local_tls_issues or []:
+        issues.append(f"TLS Configuration: {local_issue}")
+
     return issues
 
 
@@ -54,7 +67,8 @@ def correlate(discovered: dict | None = None) -> CorrelatedFindings:
         version = raw.get("version") or ""
         query_key = f"{product}|{version}"
         if query_key not in seen_queries:
-            seen_queries[query_key] = lookup_cves(product, version) if product and product != "unknown" else []
+            raw_cves = lookup_cves(product, version) if product and product != "unknown" else []
+            seen_queries[query_key] = enrich_cves(raw_cves)
         cves = seen_queries[query_key]
         port = raw.get("port")
         exposure = (

@@ -8,6 +8,8 @@ __pycache__/
 .mypy_cache/
 data/*.json
 data/*.db
+data/cache/
+data/history/
 !data/.gitkeep
 .idea/
 .vscode/

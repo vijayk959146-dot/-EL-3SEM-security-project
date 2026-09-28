@@ -15,6 +15,8 @@ def discover(target: str, ports: list[int] | None = None) -> DiscoveredAssets:
     port_list = ports or list(DEFAULT_PORTS)
     open_ports, method = scan_ports(host, port_list)
     notes = [f"Scan method: {method}"]
+    if "fallback" in method:
+        notes.append("Nmap binary not found in PATH; used TCP connect fallback scan. CVE matching is limited because version banners could not be extracted.")
 
     http: HttpCheck | None = None
     http_ports = [p.port for p in open_ports if p.port in {80, 3000, 8000, 8080, 443}]
