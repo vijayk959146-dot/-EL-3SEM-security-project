@@ -30,6 +30,25 @@ SEVERITY_COLORS = {
 
 st.set_page_config(page_title="AI Attack Surface Correlation", layout="wide", initial_sidebar_state="expanded")
 
+st.markdown(
+    """
+    <style>
+    .block-container { padding-top: 2rem; padding-bottom: 3rem; max-width: 1500px; }
+    [data-testid="stMetric"] { background: rgba(255,255,255,0.04); border: 1px solid rgba(148,163,184,0.20); padding: 0.8rem 1rem; border-radius: 8px; }
+    [data-testid="stMetricLabel"] { color: #94a3b8; }
+    [data-testid="stMetricValue"] { color: #f8fafc; }
+    .risk-strip { display:flex; gap:10px; flex-wrap:wrap; margin: 0.5rem 0 1.25rem; }
+    .risk-chip { border-radius: 999px; padding: 5px 11px; font-size: 0.82rem; font-weight: 700; border: 1px solid rgba(255,255,255,0.12); }
+    .risk-critical { background:#450a0a; color:#fecaca; }
+    .risk-high { background:#431407; color:#fed7aa; }
+    .risk-medium { background:#451a03; color:#fde68a; }
+    .risk-low { background:#172554; color:#bfdbfe; }
+    .risk-info { background:#1e293b; color:#cbd5e1; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 import hmac
 import time as _time
 
@@ -44,8 +63,10 @@ _MAX_LOGIN_ATTEMPTS = 5
 _LOCKOUT_SECONDS = 30
 
 if not DASHBOARD_PASSWORD and not ALLOW_ANONYMOUS_DASHBOARD:
-    st.error("Dashboard access is disabled because DASHBOARD_PASSWORD is not configured.")
-    st.info("Set DASHBOARD_PASSWORD in the deployment environment, then reload the app.")
+    st.title("Security Assessment Dashboard")
+    st.caption("Private defensive reporting workspace")
+    st.error("Dashboard access is currently locked.")
+    st.info("An administrator must configure DASHBOARD_PASSWORD in the deployment environment before reports can be viewed.")
     st.stop()
 
 if DASHBOARD_PASSWORD:
@@ -57,8 +78,8 @@ if DASHBOARD_PASSWORD:
         st.session_state.lockout_until = 0.0
 
     if not st.session_state.authenticated:
-        st.title("🔒 Security Dashboard Login")
-        st.caption("This dashboard is password-protected by the DASHBOARD_PASSWORD environment variable.")
+        st.title("Security Assessment Dashboard")
+        st.caption("Sign in to view authorized scan reports and remediation guidance.")
 
         now = _time.monotonic()
         locked = now < st.session_state.lockout_until
@@ -188,20 +209,35 @@ with st.sidebar.expander("📚 Security Terms Glossary"):
     - **EPSS**: Probability (0–100%) of exploitation in 30 days.
     """)
 
-st.title("AI-Assisted Attack Surface & Vulnerability Correlation")
-st.caption("Ethical defensive correlation tool — passive OSINT discovery or authorized verified-target active scanning.")
+st.title("Security Assessment Dashboard")
+st.caption("AI-assisted attack-surface discovery and defensive vulnerability prioritization")
 
 if not report:
-    st.warning(
-        "No prioritized_report.json found yet. From your terminal run:\n"
-        "- `python run_pipeline.py --target example.com` (Passive OSINT)\n"
-        "- `python run_pipeline.py --target localhost` (Local Lab Active)"
+    st.info("This dashboard is ready, but no assessment report has been loaded yet.")
+    st.subheader("Next step")
+    st.markdown(
+        "Run an authorized assessment from the project environment, then reload this page. "
+        "The dashboard will automatically show the generated findings."
     )
+    st.code(
+        "python run_pipeline.py --target example.com --passive-only\n"
+        "# or, for an authorized local lab target:\n"
+        "python run_pipeline.py --target localhost",
+        language="bash",
+    )
+    st.caption("Reports are loaded from data/<target>/prioritized_report.json.")
     st.stop()
 
 findings = report.get("findings") or []
 target = report.get("target") or "Unknown"
 mode = report.get("mode") or ("active" if target in get_target_allowlist() or is_domain_verified(target) else "passive")
+
+severity_counts = {severity: 0 for severity in ("Critical", "High", "Medium", "Low", "Info")}
+for finding in findings:
+    severity = str(finding.get("severity") or "Info").title()
+    severity_counts[severity if severity in severity_counts else "Info"] += 1
+high_risk_count = severity_counts["Critical"] + severity_counts["High"]
+related_cve_count = len({cve for finding in findings for cve in (finding.get("related_cves") or [])})
 
 # Mode Badge
 import html
@@ -230,13 +266,26 @@ if mode == "passive" or mode == "passive-osint":
         "Subdomains from Certificate Transparency logs are listed for awareness only and are not scanned."
     )
 
-# Metrics Row
-st.subheader("Summary")
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Target Host", target)
-c2.metric("Total Findings", len(findings))
-c3.metric("AI Prioritization", "Active (Bedrock)" if report.get("used_llm") else "Heuristic Fallback")
-c4.metric("Model ID", (report.get("model_id") or "—")[:22])
+# Security overview
+st.subheader("Security Overview")
+overview_cols = st.columns(5)
+overview_cols[0].metric("Target", target)
+overview_cols[1].metric("Total Findings", len(findings))
+overview_cols[2].metric("Critical + High", high_risk_count)
+overview_cols[3].metric("Related CVEs", related_cve_count)
+overview_cols[4].metric("Prioritization", "AI" if report.get("used_llm") else "Heuristic")
+
+chips = []
+for severity, css_name in (("Critical", "critical"), ("High", "high"), ("Medium", "medium"), ("Low", "low"), ("Info", "info")):
+    chips.append(f"<span class='risk-chip risk-{css_name}'>{severity}: {severity_counts[severity]}</span>")
+st.markdown("<div class='risk-strip'>" + "".join(chips) + "</div>", unsafe_allow_html=True)
+
+with st.expander("How to read this assessment", expanded=False):
+    st.markdown(
+        "**Critical/High** findings deserve attention first. **Related CVEs** are public vulnerability identifiers "
+        "linked to detected software or configuration evidence. This report is an assessment aid, not proof that a "
+        "target is exploitable. Only scan systems you own or are authorized to test."
+    )
 
 # Export Buttons
 col_exp1, col_exp2, _ = st.columns([1.5, 2, 4])
@@ -262,10 +311,11 @@ with col_exp2:
 st.markdown("---")
 
 # Executive Summary & Top Risks
-st.write(f"**Executive Summary:** {report.get('summary') or ''}")
+st.subheader("Executive Summary")
+st.info(report.get("summary") or "No executive summary was generated for this scan.")
 top = report.get("top_risks") or []
 if top:
-    st.markdown("**Top Strategic Risks:**")
+    st.markdown("**Top Strategic Risks**")
     for i, risk in enumerate(top, start=1):
         st.write(f"{i}. {risk}")
 
@@ -304,10 +354,29 @@ st.markdown("---")
 
 # Ranked Findings Table & Detailed Breakdown
 st.subheader("Ranked Findings")
+st.caption("Use the filters to focus on the issues that need action first.")
+
+filter_col1, filter_col2 = st.columns([2, 1])
+with filter_col1:
+    finding_search = st.text_input("Search findings", placeholder="Search by title, CVE, source, or exploitability", label_visibility="collapsed")
+with filter_col2:
+    severity_filter = st.selectbox("Severity", ["All", "Critical", "High", "Medium", "Low", "Info"], label_visibility="collapsed")
+
+filtered_findings = []
+search_term = finding_search.strip().lower()
+for item in findings:
+    searchable = " ".join(
+        str(item.get(key) or "") for key in ("title", "severity", "exploitability", "source", "why_it_matters")
+    ).lower() + " " + " ".join(str(cve) for cve in (item.get("related_cves") or [])).lower()
+    if severity_filter != "All" and str(item.get("severity") or "Info").title() != severity_filter:
+        continue
+    if search_term and search_term not in searchable:
+        continue
+    filtered_findings.append(item)
 
 # Formatted Table
 table_rows = []
-for item in findings:
+for item in filtered_findings:
     exploit_str = item.get("exploitability") or ""
     table_rows.append(
         {
@@ -319,11 +388,19 @@ for item in findings:
             "Source": item.get("source") or "config",
         }
     )
-st.dataframe(table_rows, use_container_width=True, hide_index=True)
+if table_rows:
+    st.dataframe(table_rows, use_container_width=True, hide_index=True, column_config={
+        "Rank": st.column_config.NumberColumn(width="small"),
+        "Severity": st.column_config.TextColumn(width="small"),
+        "Title": st.column_config.TextColumn(width="large"),
+        "CVEs": st.column_config.TextColumn(width="medium"),
+    })
+else:
+    st.success("No findings match the current filters.")
 
 # Detailed Cards using native Streamlit widgets (no raw HTML injection)
 st.subheader("Defensive Remediation Cards")
-for item in sorted(findings, key=lambda f: int(f.get("rank") or 0)):
+for item in sorted(filtered_findings, key=lambda f: int(f.get("rank") or 0)):
     severity = item.get("severity") or "Info"
     header = f"#{item.get('rank', '?')} {item.get('title', 'Finding')} [{severity}]"
     
@@ -339,6 +416,9 @@ for item in sorted(findings, key=lambda f: int(f.get("rank") or 0)):
         action = item.get("suggested_action", "")
         if action:
             st.info(f"🛡️ **Recommended Defensive Fix:**\n\n`{action}`")
+
+if not findings:
+    st.success("No prioritized vulnerabilities were found in this report.")
 
 # Pipeline Notes
 notes = report.get("notes") or []
