@@ -34,6 +34,10 @@ st.markdown(
     """
     <style>
     .block-container { padding-top: 2rem; padding-bottom: 3rem; max-width: 1500px; }
+    .dashboard-kicker { color:#38bdf8; font-size:0.78rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:0.35rem; }
+    .dashboard-subtitle { color:#94a3b8; font-size:1rem; margin-bottom:1.25rem; }
+    .scan-context { border-left:4px solid #38bdf8; background:rgba(14,116,144,0.16); padding:0.85rem 1rem; border-radius:0 8px 8px 0; margin:0.75rem 0 1.35rem; }
+    .scan-context strong { color:#e0f2fe; }
     [data-testid="stMetric"] { background: rgba(255,255,255,0.04); border: 1px solid rgba(148,163,184,0.20); padding: 0.8rem 1rem; border-radius: 8px; }
     [data-testid="stMetricLabel"] { color: #94a3b8; }
     [data-testid="stMetricValue"] { color: #f8fafc; }
@@ -213,7 +217,8 @@ with st.sidebar.expander("📚 Security Terms Glossary"):
     """)
 
 st.title("Security Assessment Dashboard")
-st.caption("AI-assisted attack-surface discovery and defensive vulnerability prioritization")
+st.markdown("<div class='dashboard-kicker'>Defensive Security Operations</div>", unsafe_allow_html=True)
+st.markdown("<div class='dashboard-subtitle'>AI-assisted attack-surface discovery and defensive vulnerability prioritization</div>", unsafe_allow_html=True)
 
 if not report:
     st.info("This dashboard is ready, but no assessment report has been loaded yet.")
@@ -259,6 +264,13 @@ esc_mode_badge = html.escape(str(mode_badge), quote=True)
 st.markdown(
     f"<div style='display:inline-block;padding:4px 12px;border-radius:16px;background:{badge_color};color:white;font-weight:600;font-size:0.9rem;margin-bottom:12px;'>"
     f"{esc_mode_badge}</div>",
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    f"<div class='scan-context'><strong>Current assessment:</strong> {html.escape(str(target))} &nbsp;•&nbsp; "
+    f"<strong>Mode:</strong> {html.escape(str(mode).replace('-', ' ').title())} &nbsp;•&nbsp; "
+    f"<strong>Evidence:</strong> {len(findings)} prioritized finding(s)</div>",
     unsafe_allow_html=True,
 )
 

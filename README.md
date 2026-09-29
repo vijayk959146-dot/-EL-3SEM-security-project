@@ -174,6 +174,8 @@ python tests/compare_rankings.py
 
 ## 🖥️ Streamlit Dashboard
 
+For a plain-language explanation of scan modes, checks, reports, and safe testing, see [USER_GUIDE.md](USER_GUIDE.md).
+
 Launch the web UI:
 ```bash
 streamlit run dashboard/app.py
