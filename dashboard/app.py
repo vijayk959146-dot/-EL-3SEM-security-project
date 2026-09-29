@@ -54,7 +54,7 @@ import time as _time
 
 # 1. Optional Password Protection
 DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "").strip()
-ALLOW_ANONYMOUS_DASHBOARD = os.getenv("ALLOW_ANONYMOUS_DASHBOARD", "false").strip().lower() in {
+ALLOW_ANONYMOUS_DASHBOARD = os.getenv("ALLOW_ANONYMOUS_DASHBOARD", "true").strip().lower() in {
     "1",
     "true",
     "yes",
@@ -68,6 +68,9 @@ if not DASHBOARD_PASSWORD and not ALLOW_ANONYMOUS_DASHBOARD:
     st.error("Dashboard access is currently locked.")
     st.info("An administrator must configure DASHBOARD_PASSWORD in the deployment environment before reports can be viewed.")
     st.stop()
+
+if not DASHBOARD_PASSWORD and ALLOW_ANONYMOUS_DASHBOARD:
+    st.warning("Demo mode: dashboard access is public. Set DASHBOARD_PASSWORD and ALLOW_ANONYMOUS_DASHBOARD=false for a private deployment.")
 
 if DASHBOARD_PASSWORD:
     if "authenticated" not in st.session_state:

@@ -133,7 +133,7 @@ AWS_SECRET_ACCESS_KEY=your_secret_key
 AWS_REGION=us-east-1
 BEDROCK_MODEL_ID=amazon.nova-micro-v1:0
 DASHBOARD_PASSWORD=replace_with_a_long_random_password
-ALLOW_ANONYMOUS_DASHBOARD=false  # Keep false for AWS/public deployments
+ALLOW_ANONYMOUS_DASHBOARD=true  # Demo mode; use false with DASHBOARD_PASSWORD for private deployments
 ```
 
 For Elastic Beanstalk, set `DASHBOARD_PASSWORD` and `ALLOW_ANONYMOUS_DASHBOARD=false`
