@@ -1,6 +1,6 @@
 """
 Streamlit dashboard for the prioritized report and scan history diffs.
-Run from repo root: streamlit run dashboard/app.py
+Run from repo root: py -m streamlit run dashboard/app.py
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from config import DATA_DIR, DEFAULT_PORTS, DEFAULT_TARGET, get_target_allowlist, is_target_allowed
 from run_pipeline import run_target
@@ -31,6 +32,7 @@ from verification.verify import (
     load_verified_targets,
 )
 from correlation.mitre_attack import map_findings_to_mitre
+from correlation.compliance import map_compliance
 from correlation.siem_export import generate_cef_export, generate_ecs_export, send_webhook_alert
 from remediation.code_gen import (
     generate_nginx_hardening,
@@ -41,11 +43,17 @@ from remediation.code_gen import (
     generate_dns_hardening,
     generate_firewall_rules,
 )
+from remediation.waf_rules import (
+    generate_aws_waf_json,
+    generate_cloudflare_waf_rules,
+    generate_modsecurity_rules,
+)
 from ai.copilot import query_copilot
+from dashboard.attack_graph import render_attack_surface_graph_html
 
 # --- Page Setup & Cyber Dark SOC Theme ---
 st.set_page_config(
-    page_title="AI Attack Surface Correlation & SOC Dashboard",
+    page_title="AI Attack Surface Correlation & SOC Defense Console",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -54,99 +62,143 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
     html, body, [class*="css"] {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
     }
     code, pre, [class*="stCode"] {
         font-family: 'JetBrains Mono', monospace !important;
     }
 
     .block-container {
-        padding-top: 1.8rem;
+        padding-top: 1.2rem;
         padding-bottom: 3.5rem;
-        max-width: 1550px;
+        max-width: 1600px;
     }
 
-    /* Top Hero Header */
-    .hero-container {
-        background: linear-gradient(135deg, rgba(15, 23, 42, 0.85) 0%, rgba(30, 41, 59, 0.7) 100%);
-        border: 1px solid rgba(56, 189, 248, 0.18);
-        border-radius: 14px;
-        padding: 1.5rem 1.8rem;
-        margin-bottom: 1.5rem;
-        backdrop-filter: blur(12px);
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    /* Top Futuristic HUD Header */
+    .cyber-hud-header {
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.92) 0%, rgba(6, 11, 25, 0.95) 100%);
+        border: 1px solid rgba(56, 189, 248, 0.35);
+        border-radius: 16px;
+        padding: 1.4rem 1.8rem;
+        margin-bottom: 1.4rem;
+        backdrop-filter: blur(16px);
+        box-shadow: 0 10px 35px -5px rgba(0, 242, 254, 0.12), 0 0 20px rgba(0, 0, 0, 0.6);
         display: flex;
         justify-content: space-between;
         align-items: center;
         flex-wrap: wrap;
         gap: 1rem;
+        position: relative;
+        overflow: hidden;
     }
 
-    .hero-title-group h1 {
-        font-size: 1.85rem;
-        font-weight: 800;
+    .cyber-hud-header::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 2px;
+        background: linear-gradient(90deg, transparent 0%, #38bdf8 50%, transparent 100%);
+    }
+
+    .cyber-title h1 {
+        font-size: 2rem;
+        font-weight: 900;
         margin: 0;
-        background: linear-gradient(90deg, #f8fafc 0%, #38bdf8 100%);
+        background: linear-gradient(90deg, #f8fafc 0%, #38bdf8 60%, #818cf8 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.6rem;
+        letter-spacing: -0.02em;
     }
 
-    .hero-title-group p {
+    .cyber-title p {
         color: #94a3b8;
         font-size: 0.95rem;
-        margin: 0.25rem 0 0 0;
+        margin: 0.3rem 0 0 0;
+        font-weight: 500;
     }
 
-    /* Metric Cards */
-    .kpi-card {
-        background: linear-gradient(145deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.8) 100%);
-        border: 1px solid rgba(148, 163, 184, 0.15);
-        border-radius: 12px;
-        padding: 1.1rem 1.25rem;
-        transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
+    .pulse-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: #10b981;
+        box-shadow: 0 0 10px #10b981;
+        animation: pulse 1.8s infinite;
+        margin-right: 6px;
+    }
+
+    @keyframes pulse {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+        70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+
+    /* High-Tech Cyber KPI Cards */
+    .cyber-card {
+        background: linear-gradient(145deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.85) 100%);
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        border-radius: 14px;
+        padding: 1.15rem 1.3rem;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 6px 24px -2px rgba(0, 0, 0, 0.4);
+        position: relative;
+        overflow: hidden;
         height: 100%;
     }
-    .kpi-card:hover {
-        transform: translateY(-2px);
-        border-color: rgba(56, 189, 248, 0.4);
-        box-shadow: 0 8px 25px -4px rgba(56, 189, 248, 0.15);
+    .cyber-card:hover {
+        transform: translateY(-3px);
+        border-color: rgba(56, 189, 248, 0.5);
+        box-shadow: 0 12px 30px -4px rgba(56, 189, 248, 0.2);
     }
-    .kpi-label {
-        font-size: 0.78rem;
+    .cyber-label {
+        font-size: 0.76rem;
         text-transform: uppercase;
-        letter-spacing: 0.06em;
-        font-weight: 700;
+        letter-spacing: 0.08em;
+        font-weight: 800;
         color: #94a3b8;
-        margin-bottom: 0.35rem;
+        margin-bottom: 0.4rem;
         display: flex;
         align-items: center;
         gap: 0.4rem;
     }
-    .kpi-value {
-        font-size: 1.75rem;
-        font-weight: 800;
+    .cyber-value {
+        font-size: 1.85rem;
+        font-weight: 900;
         color: #f8fafc;
-        line-height: 1.2;
+        line-height: 1.15;
     }
-    .kpi-sub {
+    .cyber-sub {
         font-size: 0.8rem;
         color: #64748b;
-        margin-top: 0.25rem;
+        margin-top: 0.35rem;
+        font-weight: 500;
+    }
+
+    /* Grade Badge Circle */
+    .grade-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        font-size: 1.4rem;
+        font-weight: 900;
+        box-shadow: 0 0 15px currentColor;
     }
 
     /* Risk Score Gauge Pill */
-    .risk-pill-crit { background: rgba(220, 38, 38, 0.18); border: 1px solid #ef4444; color: #fca5a5; }
-    .risk-pill-high { background: rgba(234, 88, 12, 0.18); border: 1px solid #f97316; color: #fdba74; }
-    .risk-pill-med { background: rgba(217, 119, 6, 0.18); border: 1px solid #eab308; color: #fde047; }
-    .risk-pill-low { background: rgba(37, 99, 235, 0.18); border: 1px solid #3b82f6; color: #93c5fd; }
-    .risk-pill-info { background: rgba(75, 85, 99, 0.18); border: 1px solid #64748b; color: #cbd5e1; }
+    .risk-pill-crit { background: rgba(220, 38, 38, 0.2); border: 1px solid #ef4444; color: #fca5a5; }
+    .risk-pill-high { background: rgba(234, 88, 12, 0.2); border: 1px solid #f97316; color: #fdba74; }
+    .risk-pill-med { background: rgba(217, 119, 6, 0.2); border: 1px solid #eab308; color: #fde047; }
+    .risk-pill-low { background: rgba(37, 99, 235, 0.2); border: 1px solid #3b82f6; color: #93c5fd; }
+    .risk-pill-info { background: rgba(75, 85, 99, 0.2); border: 1px solid #64748b; color: #cbd5e1; }
 
     /* Severity Badges & Chips */
     .risk-strip {
@@ -166,7 +218,7 @@ st.markdown(
         transition: all 0.2s ease;
     }
     .risk-chip:hover {
-        filter: brightness(1.15);
+        filter: brightness(1.2);
     }
     .risk-critical { background: #450a0a; color: #fecaca; border: 1px solid #b91c1c; }
     .risk-high { background: #431407; color: #fed7aa; border: 1px solid #c2410c; }
@@ -176,31 +228,32 @@ st.markdown(
 
     /* Interactive Banner Box */
     .feature-banner {
-        background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);
-        border: 1px solid rgba(56, 189, 248, 0.25);
-        border-radius: 10px;
-        padding: 1.2rem;
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.85) 0%, rgba(15, 23, 42, 0.95) 100%);
+        border: 1px solid rgba(56, 189, 248, 0.28);
+        border-radius: 12px;
+        padding: 1.25rem;
         margin-bottom: 1.25rem;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
     }
 
-    /* Subtle Glassmorphism for expanders and tabs */
+    /* Glassmorphism for expanders and tabs */
     [data-testid="stExpander"] {
-        background: rgba(15, 23, 42, 0.5) !important;
+        background: rgba(15, 23, 42, 0.6) !important;
         border: 1px solid rgba(148, 163, 184, 0.16) !important;
-        border-radius: 10px !important;
+        border-radius: 12px !important;
         margin-bottom: 0.75rem !important;
     }
 
-    /* Status Badge */
+    /* Mode Pill Badge */
     .mode-pill {
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        padding: 5px 13px;
+        padding: 6px 15px;
         border-radius: 9999px;
-        font-size: 0.82rem;
-        font-weight: 600;
-        letter-spacing: 0.02em;
+        font-size: 0.84rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
     }
     </style>
     """,
@@ -222,9 +275,9 @@ _LOCKOUT_SECONDS = 30
 if not DASHBOARD_PASSWORD and not ALLOW_ANONYMOUS_DASHBOARD:
     st.markdown(
         """
-        <div class="hero-container">
-            <div class="hero-title-group">
-                <h1>🔒 Security Assessment Dashboard</h1>
+        <div class="cyber-hud-header">
+            <div class="cyber-title">
+                <h1>🔒 Security Assessment Portal</h1>
                 <p>Private defensive reporting workspace</p>
             </div>
         </div>
@@ -246,8 +299,8 @@ if DASHBOARD_PASSWORD:
     if not st.session_state.authenticated:
         st.markdown(
             """
-            <div class="hero-container">
-                <div class="hero-title-group">
+            <div class="cyber-hud-header">
+                <div class="cyber-title">
                     <h1>🔒 Security Assessment Portal</h1>
                     <p>Enter your authorized access token to view defensive reports</p>
                 </div>
@@ -311,18 +364,18 @@ available_targets = _discover_available_targets()
 # Sidebar: Controls & Quick Scans
 st.sidebar.markdown(
     """
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:1rem;">
-        <span style="font-size:1.6rem;">🛡️</span>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:1.1rem;padding-bottom:0.8rem;border-bottom:1px solid rgba(148,163,184,0.15);">
+        <span style="font-size:1.8rem;">🛡️</span>
         <div>
-            <h3 style="margin:0;font-size:1.15rem;font-weight:700;color:#f8fafc;">Project Controls</h3>
-            <span style="font-size:0.75rem;color:#38bdf8;">AI Attack Surface SOC</span>
+            <h3 style="margin:0;font-size:1.15rem;font-weight:800;color:#f8fafc;letter-spacing:-0.02em;">Command Center</h3>
+            <span style="font-size:0.75rem;color:#38bdf8;font-weight:600;"><span class="pulse-dot"></span>AI SOC Defense Engine</span>
         </div>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-# Target Selector
+# Target Selector with Dynamic Workspace Sync
 if "active_target" not in st.session_state:
     st.session_state["active_target"] = "localhost" if "localhost" in available_targets else (available_targets[0] if available_targets else None)
 
@@ -360,7 +413,6 @@ with st.sidebar.expander("🚀 Run New Scan / Assessment", expanded=False):
                     st.rerun()
                 except Exception as ex:
                     st.error(f"Scan failed: {ex}")
-
 
 
 def _load_report(target: str | None = None) -> dict[str, Any]:
@@ -459,6 +511,7 @@ with st.sidebar.expander("📚 Security Terms Glossary", expanded=False):
     - **EPSS**: Probability (0–100%) of weaponized exploitation in the next 30 days.
     - **CVSS v3.1**: 0.0–10.0 standard severity rating framework.
     - **MITRE ATT&CK**: Knowledge base of adversary tactics and techniques.
+    - **OWASP Top 10**: Standard reference for web application security risks.
     """)
 
 # Sidebar footer status
@@ -472,7 +525,7 @@ target_display = report.get("target") or (selected_target or "No Target Selected
 mode = report.get("mode") or ("active" if is_target_allowed(target_display) or is_domain_verified(target_display) else "passive")
 
 if is_target_allowed(target_display):
-    mode_pill = '<span class="mode-pill" style="background:#1e3a8a;border:1px solid #3b82f6;color:#bfdbfe;">🧪 Local Lab (Active Probing Allowed)</span>'
+    mode_pill = '<span class="mode-pill" style="background:#1e3a8a;border:1px solid #3b82f6;color:#bfdbfe;">🧪 Local Lab (Active Probing)</span>'
 elif is_domain_verified(target_display) or mode == "active":
     mode_pill = '<span class="mode-pill" style="background:#064e3b;border:1px solid #10b981;color:#a7f3d0;">🛡️ Verified Active (Authorized)</span>'
 else:
@@ -480,10 +533,10 @@ else:
 
 st.markdown(
     f"""
-    <div class="hero-container">
-        <div class="hero-title-group">
+    <div class="cyber-hud-header">
+        <div class="cyber-title">
             <h1>🛡️ AI Attack Surface & Defense SOC</h1>
-            <p>Automated defensive intelligence, CVE/KEV correlation, and AI-prioritized remediation</p>
+            <p><span class="pulse-dot"></span>Automated defensive intelligence, CVE/KEV correlation, and AI-prioritized remediation</p>
         </div>
         <div>
             {mode_pill}
@@ -498,10 +551,10 @@ st.markdown(
 if not report or not report.get("findings"):
     st.markdown(
         """
-        <div style="background:rgba(30,41,59,0.5);border:1px solid rgba(148,163,184,0.2);border-radius:12px;padding:2.5rem;text-align:center;margin:2rem 0;">
-            <div style="font-size:3rem;margin-bottom:1rem;">🎯</div>
-            <h2 style="color:#f8fafc;margin:0 0 0.5rem 0;">No Assessment Report Loaded</h2>
-            <p style="color:#94a3b8;max-width:600px;margin:0 auto 1.5rem auto;">
+        <div style="background:radial-gradient(circle at center, rgba(30,41,59,0.8) 0%, rgba(15,23,42,0.9) 100%);border:1px solid rgba(56,189,248,0.25);border-radius:16px;padding:3rem 2rem;text-align:center;margin:2rem 0;box-shadow:0 10px 40px rgba(0,0,0,0.5);">
+            <div style="font-size:3.5rem;margin-bottom:1rem;">🎯</div>
+            <h2 style="color:#f8fafc;font-weight:800;margin:0 0 0.5rem 0;">No Assessment Report Loaded</h2>
+            <p style="color:#94a3b8;max-width:600px;margin:0 auto 1.8rem auto;font-size:1.05rem;">
                 Select an existing target from the sidebar, launch an instant scan, or load sample lab data to evaluate the defensive intelligence engine.
             </p>
         </div>
@@ -526,7 +579,6 @@ if not report or not report.get("findings"):
                 _time.sleep(1)
                 st.rerun()
     st.stop()
-
 
 
 findings = report.get("findings") or []
@@ -565,6 +617,26 @@ else:
     score_pill_class = "risk-pill-low"
     score_label = "SECURE / LOW"
 
+# Calculate Compliance & Security Grade
+comp_data = map_compliance(findings)
+grade = comp_data["grade"]
+grade_color = comp_data["grade_color"]
+
+# Load asset metadata for visual graph & OSINT
+assets_data = {}
+try:
+    assets_data = read_json("discovered_assets.json", target=selected_target)
+except Exception:
+    try:
+        assets_data = read_json("discovered_assets.json")
+    except Exception:
+        assets_data = {}
+
+passive_meta = assets_data.get("passive_meta") or {}
+discovered_ports = assets_data.get("ports", [])
+discovered_subdomains = passive_meta.get("certificate_transparency", [])
+discovered_ips = passive_meta.get("dns", {}).get("A", [])
+
 
 # --- Executive KPI Grid ---
 kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
@@ -572,10 +644,10 @@ kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
 with kpi1:
     st.markdown(
         f"""
-        <div class="kpi-card">
-            <div class="kpi-label">🎯 Assessed Target</div>
-            <div class="kpi-value" style="font-size:1.4rem;word-break:break-all;">{target}</div>
-            <div class="kpi-sub">Mode: {mode.upper()}</div>
+        <div class="cyber-card">
+            <div class="cyber-label">🎯 Assessed Target</div>
+            <div class="cyber-value" style="font-size:1.35rem;word-break:break-all;">{target}</div>
+            <div class="cyber-sub">Mode: {mode.upper()}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -584,10 +656,10 @@ with kpi1:
 with kpi2:
     st.markdown(
         f"""
-        <div class="kpi-card">
-            <div class="kpi-label">🚨 Total Findings</div>
-            <div class="kpi-value">{len(findings)}</div>
-            <div class="kpi-sub">{high_risk_count} Critical / High</div>
+        <div class="cyber-card">
+            <div class="cyber-label">🚨 Total Findings</div>
+            <div class="cyber-value">{len(findings)}</div>
+            <div class="cyber-sub">{high_risk_count} Critical / High</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -596,14 +668,14 @@ with kpi2:
 with kpi3:
     st.markdown(
         f"""
-        <div class="kpi-card">
-            <div class="kpi-label">⚡ Threat Index</div>
-            <div class="kpi-value">
-                <span class="risk-chip {score_pill_class}" style="padding:4px 10px;font-size:1.15rem;">
+        <div class="cyber-card">
+            <div class="cyber-label">⚡ Threat Index</div>
+            <div class="cyber-value">
+                <span class="risk-chip {score_pill_class}" style="padding:4px 12px;font-size:1.2rem;">
                     {risk_score}/100
                 </span>
             </div>
-            <div class="kpi-sub">{score_label} POSTURE</div>
+            <div class="cyber-sub">{score_label} POSTURE</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -612,10 +684,17 @@ with kpi3:
 with kpi4:
     st.markdown(
         f"""
-        <div class="kpi-card">
-            <div class="kpi-label">🏷️ Public CVEs</div>
-            <div class="kpi-value">{cve_count}</div>
-            <div class="kpi-sub">NVD & CISA KEV Linked</div>
+        <div class="cyber-card">
+            <div class="cyber-label">🛡️ Security Grade</div>
+            <div class="cyber-value" style="display:flex;align-items:center;gap:10px;">
+                <span class="grade-badge" style="color:{grade_color};border:2px solid {grade_color};">
+                    {grade}
+                </span>
+                <span style="font-size:1rem;font-weight:700;color:{grade_color};">
+                    {comp_data['score']}%
+                </span>
+            </div>
+            <div class="cyber-sub">{comp_data['posture']}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -626,10 +705,10 @@ with kpi5:
     model_str = report.get("model_id") or "CVSS 3.1 Fallback"
     st.markdown(
         f"""
-        <div class="kpi-card">
-            <div class="kpi-label">🧠 Prioritization</div>
-            <div class="kpi-value" style="font-size:1.25rem;color:#38bdf8;">{engine_name}</div>
-            <div class="kpi-sub" style="font-size:0.75rem;overflow:hidden;text-overflow:ellipsis;">{model_str}</div>
+        <div class="cyber-card">
+            <div class="cyber-label">🧠 Prioritization Engine</div>
+            <div class="cyber-value" style="font-size:1.2rem;color:#38bdf8;">{engine_name}</div>
+            <div class="cyber-sub" style="font-size:0.75rem;overflow:hidden;text-overflow:ellipsis;">{model_str}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -650,11 +729,14 @@ for severity, css_name in (
 st.markdown("<div class='risk-strip'>" + "".join(chips) + "</div>", unsafe_allow_html=True)
 
 
-# --- Enhanced Dashboard Tabs ---
-tab_findings, tab_remediation, tab_mitre, tab_simulator, tab_copilot, tab_overview, tab_osint, tab_diff, tab_export = st.tabs(
+# --- Enhanced Cyber Dashboard Tabs ---
+tab_graph, tab_findings, tab_remediation, tab_compliance, tab_waf, tab_mitre, tab_simulator, tab_copilot, tab_overview, tab_osint, tab_diff, tab_export = st.tabs(
     [
+        "🕸️ Visual Attack Graph",
         "📋 Ranked Findings",
         "🛠️ Remediation Sandbox",
+        "🛡️ OWASP & NIST",
+        "🧱 WAF Shield",
         "🕸️ MITRE ATT&CK",
         "⚡ Patch Simulator",
         "🤖 AI SOC Copilot",
@@ -664,6 +746,23 @@ tab_findings, tab_remediation, tab_mitre, tab_simulator, tab_copilot, tab_overvi
         "📥 SIEM & Export",
     ]
 )
+
+
+# ==========================================
+# TAB 0: Interactive Visual Attack Graph (D3.js)
+# ==========================================
+with tab_graph:
+    st.markdown("### 🕸️ Interactive Attack Surface Network Topology")
+    st.caption("Dynamic force-directed cyber graph illustrating the target, IP endpoints, public subdomains, open ports, and correlated risk nodes.")
+
+    graph_html = render_attack_surface_graph_html(
+        target=target,
+        findings=findings,
+        ports=discovered_ports,
+        subdomains=discovered_subdomains,
+        ips=discovered_ips,
+    )
+    components.html(graph_html, height=510, scrolling=False)
 
 
 # ==========================================
@@ -849,7 +948,82 @@ with tab_remediation:
 
 
 # ==========================================
-# TAB 3: MITRE ATT&CK Matrix & Threat Graph
+# TAB 3: OWASP Top 10 & NIST CSF Compliance
+# ==========================================
+with tab_compliance:
+    st.markdown("### 🛡️ Regulatory & Standard Compliance Matrix")
+    st.caption("Automated mapping against the OWASP Top 10 (2021) Web Security Risks and NIST Cybersecurity Framework (CSF v2.0).")
+
+    cmp_c1, cmp_c2 = st.columns([1.5, 1.5])
+    with cmp_c1:
+        st.markdown("#### 🌐 OWASP Top 10 (2021) Breakdown")
+        for cat_id, items in comp_data["owasp_categories"].items():
+            cat_info = OWASP_CATEGORIES.get(cat_id, {})
+            has_violation = len(items) > 0
+            status_badge = f"<span style='color:#ef4444;font-weight:700;'>❌ {len(items)} Violation(s)</span>" if has_violation else "<span style='color:#10b981;font-weight:700;'>✅ Compliant</span>"
+            with st.expander(f"{cat_info.get('icon', '📌')} {cat_id}: {cat_info.get('title')} — {status_badge}"):
+                st.markdown(f"**Standard Risk Level:** `{cat_info.get('risk', 'Medium')}`")
+                if items:
+                    st.markdown("**Correlated Target Exposures:**")
+                    for it in items:
+                        st.markdown(f"- `[{it.get('severity', 'Info')}]` {it.get('title')}")
+                else:
+                    st.success("No active findings in this category.")
+
+    with cmp_c2:
+        st.markdown("#### 🏛️ NIST Cybersecurity Framework (CSF v2.0)")
+        for nist in comp_data["nist_functions"]:
+            st.markdown(
+                f"""
+                <div style="background:rgba(15,23,42,0.7);border:1px solid {nist['color']}44;border-left:4px solid {nist['color']};border-radius:8px;padding:10px 14px;margin-bottom:8px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-weight:700;color:#f8fafc;font-size:0.9rem;">[{nist['id']}] {nist['name']}</span>
+                        <span style="color:{nist['color']};font-weight:800;font-size:0.85rem;">{nist['status']}</span>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
+# ==========================================
+# TAB 4: WAF Rule Shield Exporter
+# ==========================================
+with tab_waf:
+    st.markdown("### 🧱 Web Application Firewall (WAF) Rule Shield")
+    st.caption("Export ready-to-import firewall rules to block exploit scanners and enforce header protections directly at the network edge.")
+
+    waf_env = st.radio(
+        "Select WAF Platform:",
+        ["AWS WAF (WebACL JSON)", "Cloudflare WAF (Custom Rules Expression)", "ModSecurity / Coraza (.conf)"],
+        horizontal=True,
+    )
+
+    if "AWS" in waf_env:
+        waf_code = generate_aws_waf_json(findings, target=target)
+        waf_lang = "json"
+        waf_file = f"aws_waf_shield_{target}.json"
+    elif "Cloudflare" in waf_env:
+        waf_code = generate_cloudflare_waf_rules(findings, target=target)
+        waf_lang = "bash"
+        waf_file = f"cloudflare_waf_{target}.txt"
+    else:
+        waf_code = generate_modsecurity_rules(findings, target=target)
+        waf_lang = "apacheconf"
+        waf_file = f"modsecurity_{target}.conf"
+
+    st.code(waf_code, language=waf_lang)
+    st.download_button(
+        label=f"💾 Download `{waf_file}`",
+        data=waf_code,
+        file_name=waf_file,
+        mime="text/plain",
+        type="primary",
+    )
+
+
+# ==========================================
+# TAB 5: MITRE ATT&CK Matrix & Threat Graph
 # ==========================================
 with tab_mitre:
     st.markdown("### 🕸️ MITRE ATT&CK Cyber Kill-Chain Matrix")
@@ -903,7 +1077,7 @@ with tab_mitre:
 
 
 # ==========================================
-# TAB 4: Real-Time "What-If" Patch Simulator
+# TAB 6: Real-Time "What-If" Patch Simulator
 # ==========================================
 with tab_simulator:
     st.markdown("### ⚡ Real-Time \"What-If\" Patch & Threat Reduction Simulator")
@@ -953,7 +1127,7 @@ with tab_simulator:
 
         st.markdown(
             f"""
-            <div class="kpi-card" style="text-align:center;padding:1.5rem;">
+            <div class="cyber-card" style="text-align:center;padding:1.5rem;">
                 <div style="font-size:0.85rem;color:#94a3b8;font-weight:700;text-transform:uppercase;">Simulated Threat Posture</div>
                 <div style="font-size:3rem;font-weight:900;color:{'#10b981' if sim_risk < 20 else '#38bdf8' if sim_risk < 50 else '#ef4444'};margin:0.5rem 0;">
                     {sim_risk}/100
@@ -979,7 +1153,7 @@ with tab_simulator:
 
 
 # ==========================================
-# TAB 5: AI SOC Security Copilot
+# TAB 7: AI SOC Security Copilot
 # ==========================================
 with tab_copilot:
     st.markdown("### 🤖 Interactive AI SOC Security Copilot")
@@ -1006,7 +1180,7 @@ with tab_copilot:
             quick_prompt = "Generate an executive cyber risk briefing for CISO and senior management."
     with q_col2:
         if st.button("⚡ Top 3 Quick Wins", use_container_width=True):
-            quick_prompt = "What are the top 3 quick-win fixes that provide the highest immediate security return?"
+            quick_prompt = "What are the top 3 quick-win fixes that provide the highest immediate security impact & risk reduction?"
     with q_col3:
         if st.button("🧪 Bash Verification Script", use_container_width=True):
             quick_prompt = "Generate a comprehensive bash script to test and verify these fixes."
@@ -1035,7 +1209,7 @@ with tab_copilot:
 
 
 # ==========================================
-# TAB 6: Executive Insights & Attack Surface
+# TAB 8: Executive Insights & Attack Surface
 # ==========================================
 with tab_overview:
     st.markdown("### 📊 Executive Summary & Strategic Risk Posture")
@@ -1070,10 +1244,10 @@ with tab_overview:
     with v_c1:
         st.markdown(
             f"""
-            <div class="kpi-card">
-                <div class="kpi-label">⚙️ Configuration & Headers</div>
-                <div class="kpi-value">{config_issues}</div>
-                <div class="kpi-sub">Missing CSP, HSTS, X-Frame, Info Leaks</div>
+            <div class="cyber-card">
+                <div class="cyber-label">⚙️ Configuration & Headers</div>
+                <div class="cyber-value">{config_issues}</div>
+                <div class="cyber-sub">Missing CSP, HSTS, X-Frame, Info Leaks</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1081,10 +1255,10 @@ with tab_overview:
     with v_c2:
         st.markdown(
             f"""
-            <div class="kpi-card">
-                <div class="kpi-label">🔌 Open Ports & Services</div>
-                <div class="kpi-value">{net_issues}</div>
-                <div class="kpi-sub">Exposed network service banners</div>
+            <div class="cyber-card">
+                <div class="cyber-label">🔌 Open Ports & Services</div>
+                <div class="cyber-value">{net_issues}</div>
+                <div class="cyber-sub">Exposed network service banners</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1092,10 +1266,10 @@ with tab_overview:
     with v_c3:
         st.markdown(
             f"""
-            <div class="kpi-card">
-                <div class="kpi-label">⚠️ Known CVE Vulnerabilities</div>
-                <div class="kpi-value">{cve_findings}</div>
-                <div class="kpi-sub">Correlated against NVD database</div>
+            <div class="cyber-card">
+                <div class="cyber-label">⚠️ Known CVE Vulnerabilities</div>
+                <div class="cyber-value">{cve_findings}</div>
+                <div class="cyber-sub">Correlated against NVD database</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1103,25 +1277,13 @@ with tab_overview:
 
 
 # ==========================================
-# TAB 7: OSINT & Attack Surface Intelligence
+# TAB 9: OSINT & Attack Surface Intelligence
 # ==========================================
 with tab_osint:
     st.markdown("### 🌐 Passive Intelligence & Attack Surface Recon")
     st.caption("Non-intrusive metadata gathered from public DNS, TLS certificates, and Certificate Transparency (crt.sh) logs.")
 
-    assets_loaded = False
-    try:
-        assets_data = read_json("discovered_assets.json", target=selected_target)
-        assets_loaded = True
-    except Exception:
-        try:
-            assets_data = read_json("discovered_assets.json")
-            assets_loaded = True
-        except Exception:
-            assets_data = {}
-
-    if assets_loaded and assets_data:
-        passive_meta = assets_data.get("passive_meta") or {}
+    if assets_data:
         o_tab1, o_tab2, o_tab3, o_tab4 = st.tabs(["📧 DNS & Email Security", "🔒 TLS/SSL Certificate", "📜 CT Subdomains", "🔌 Open Ports"])
         
         with o_tab1:
@@ -1187,7 +1349,7 @@ with tab_osint:
 
 
 # ==========================================
-# TAB 8: History & Remediation Diff
+# TAB 10: History & Remediation Diff
 # ==========================================
 with tab_diff:
     st.markdown("### 🔄 Historical Remediation & Regression Analysis")
@@ -1235,7 +1397,7 @@ with tab_diff:
 
 
 # ==========================================
-# TAB 9: Export, SIEM & Webhook Dispatch
+# TAB 11: Export, SIEM & Webhook Dispatch
 # ==========================================
 with tab_export:
     st.markdown("### 📥 Executive Reports & SIEM Integration")
@@ -1246,7 +1408,7 @@ with tab_export:
     with exp_col1:
         st.markdown(
             """
-            <div class="kpi-card" style="text-align:center;">
+            <div class="cyber-card" style="text-align:center;">
                 <div style="font-size:2rem;margin-bottom:0.5rem;">📄</div>
                 <div style="font-weight:700;color:#f8fafc;margin-bottom:0.5rem;">HTML Executive Report</div>
                 <p style="font-size:0.8rem;color:#94a3b8;margin-bottom:1rem;">Standalone interactive HTML briefing with full finding breakdown</p>
@@ -1267,7 +1429,7 @@ with tab_export:
     with exp_col2:
         st.markdown(
             """
-            <div class="kpi-card" style="text-align:center;">
+            <div class="cyber-card" style="text-align:center;">
                 <div style="font-size:2rem;margin-bottom:0.5rem;">📊</div>
                 <div style="font-weight:700;color:#f8fafc;margin-bottom:0.5rem;">CSV Findings Matrix</div>
                 <p style="font-size:0.8rem;color:#94a3b8;margin-bottom:1rem;">Spreadsheet-ready findings with formula injection protection</p>
@@ -1287,7 +1449,7 @@ with tab_export:
     with exp_col3:
         st.markdown(
             """
-            <div class="kpi-card" style="text-align:center;">
+            <div class="cyber-card" style="text-align:center;">
                 <div style="font-size:2rem;margin-bottom:0.5rem;">💾</div>
                 <div style="font-weight:700;color:#f8fafc;margin-bottom:0.5rem;">Raw JSON Schema</div>
                 <p style="font-size:0.8rem;color:#94a3b8;margin-bottom:1rem;">Direct machine-readable JSON for SIEM / CI/CD integration</p>

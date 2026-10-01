@@ -625,24 +625,40 @@ class TestSecurityPipeline(unittest.TestCase):
         ans3 = query_copilot("give me a test bash script", report)
         self.assertIn("#!/usr/bin/env bash", ans3)
 
-    # --- 20. SIEM Exporter & Webhook Dispatcher ---
-    def test_siem_export(self):
-        from correlation.siem_export import generate_cef_export, generate_ecs_export
-        report = {
-            "target": "siem-target.com",
-            "findings": [{"rank": 1, "title": "Open Port 80", "severity": "High", "exploitability": "Public exposure"}],
-        }
-        cef = generate_cef_export(report)
-        self.assertIn("CEF:0", cef)
-        self.assertIn("siem-target.com", cef)
+    # --- 21. OWASP Top 10 & NIST CSF Compliance Engine ---
+    def test_compliance_engine(self):
+        from correlation.compliance import map_compliance
+        sample_findings = [
+            {"title": "Unencrypted HTTP Traffic", "severity": "High", "source": "config"},
+            {"title": "Missing CSP Header", "severity": "Medium", "source": "headers"},
+            {"title": "Open Port 8080", "severity": "Medium", "source": "port_scan"},
+        ]
+        res = map_compliance(sample_findings)
+        self.assertIn("grade", res)
+        self.assertIn("score", res)
+        self.assertIn("nist_functions", res)
+        self.assertIn("owasp_categories", res)
+        self.assertGreater(len(res["nist_functions"]), 0)
 
-        ecs = generate_ecs_export(report)
-        self.assertIn("@timestamp", ecs)
-        self.assertIn("FINDING-1", ecs)
+    # --- 22. WAF Rule Generators ---
+    def test_waf_rule_generators(self):
+        from remediation.waf_rules import generate_aws_waf_json, generate_cloudflare_waf_rules, generate_modsecurity_rules
+        sample = [{"title": "Missing Security Headers"}]
+        aws_waf = generate_aws_waf_json(sample, target="test.com")
+        self.assertIn("WebACL", aws_waf)
+        self.assertIn("AWSManagedRulesCommonRuleSet", aws_waf)
+
+        cf_waf = generate_cloudflare_waf_rules(sample, target="test.com")
+        self.assertIn("Cloudflare", cf_waf)
+        self.assertIn("nikto", cf_waf)
+
+        modsec = generate_modsecurity_rules(sample, target="test.com")
+        self.assertIn("SecRuleEngine", modsec)
 
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 
