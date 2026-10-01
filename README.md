@@ -178,7 +178,11 @@ For a plain-language explanation of scan modes, checks, reports, and safe testin
 
 Launch the web UI:
 ```bash
-streamlit run dashboard/app.py
+# On Windows (PowerShell / CMD):
+py -m streamlit run dashboard/app.py
+
+# Or with python:
+python -m streamlit run dashboard/app.py
 ```
 
 Includes:

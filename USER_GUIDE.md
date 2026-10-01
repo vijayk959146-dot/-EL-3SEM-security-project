@@ -65,7 +65,20 @@ The allowlist and domain ownership verification guard active scans. A target tha
 4. Storage writes a report under `data/<target>/`.
 5. The Streamlit dashboard reads the report and shows risk summaries, CVEs, evidence, and defensive actions.
 
+## Running the Dashboard
+
+To launch the web interface:
+
+```bash
+# On Windows PowerShell / Command Prompt:
+py -m streamlit run dashboard/app.py
+
+# Or:
+python -m streamlit run dashboard/app.py
+```
+
 ## What the dashboard shows
+
 
 - **📋 Ranked Findings & Remediation Cards:** Searchable, severity-filtered vulnerabilities with exploitability context and NVD/CISA KEV links.
 - **🛠️ Remediation Sandbox & Code Generator:** Instant drop-in configuration patches for Nginx, Apache, Caddy, Cloudflare Workers, Node.js/Helmet, DNS records (SPF/DMARC), and Linux UFW/iptables firewalls.

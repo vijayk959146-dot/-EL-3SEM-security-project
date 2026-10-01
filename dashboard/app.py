@@ -323,12 +323,18 @@ st.sidebar.markdown(
 )
 
 # Target Selector
+if "active_target" not in st.session_state:
+    st.session_state["active_target"] = "localhost" if "localhost" in available_targets else (available_targets[0] if available_targets else None)
+
 selected_target: str | None = None
 if available_targets:
-    default_idx = 0
-    if "localhost" in available_targets:
-        default_idx = available_targets.index("localhost")
-    selected_target = st.sidebar.selectbox("🎯 Target Workspace", available_targets, index=default_idx)
+    target_idx = 0
+    if st.session_state.get("active_target") in available_targets:
+        target_idx = available_targets.index(st.session_state["active_target"])
+    elif "localhost" in available_targets:
+        target_idx = available_targets.index("localhost")
+    selected_target = st.sidebar.selectbox("🎯 Target Workspace", available_targets, index=target_idx, key="target_workspace_select")
+    st.session_state["active_target"] = selected_target
 else:
     st.sidebar.caption("No target reports detected yet.")
 
@@ -348,11 +354,13 @@ with st.sidebar.expander("🚀 Run New Scan / Assessment", expanded=False):
             with st.spinner(f"Running defensive pipeline against {target_name}..."):
                 try:
                     run_target(target_name, ports_list, force_passive=force_passive)
+                    st.session_state["active_target"] = target_name
                     st.success(f"Assessment completed for {target_name}!")
                     _time.sleep(1)
                     st.rerun()
                 except Exception as ex:
                     st.error(f"Scan failed: {ex}")
+
 
 
 def _load_report(target: str | None = None) -> dict[str, Any]:
@@ -505,6 +513,7 @@ if not report or not report.get("findings"):
         if st.button("⚡ Run Instant Localhost Scan", use_container_width=True, type="primary"):
             with st.spinner("Executing defensive pipeline for localhost..."):
                 run_target("localhost", DEFAULT_PORTS, force_passive=False)
+                st.session_state["active_target"] = "localhost"
                 st.success("Localhost scan complete!")
                 _time.sleep(1)
                 st.rerun()
@@ -512,10 +521,12 @@ if not report or not report.get("findings"):
         if st.button("🌐 Run Passive OSINT on example.com", use_container_width=True):
             with st.spinner("Gathering passive intelligence for example.com..."):
                 run_target("example.com", DEFAULT_PORTS, force_passive=True)
+                st.session_state["active_target"] = "example.com"
                 st.success("Passive OSINT scan complete!")
                 _time.sleep(1)
                 st.rerun()
     st.stop()
+
 
 
 findings = report.get("findings") or []

@@ -94,7 +94,7 @@ def main() -> None:
         run_target(host, ports, force_passive=args.passive_only)
 
     print("\n[+] Scan complete. Data written to data/ and data/history/")
-    print("[+] Dashboard: streamlit run dashboard/app.py")
+    print("[+] Dashboard: py -m streamlit run dashboard/app.py (or: python -m streamlit run dashboard/app.py)")
 
 
 if __name__ == "__main__":
