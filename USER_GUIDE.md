@@ -67,15 +67,15 @@ The allowlist and domain ownership verification guard active scans. A target tha
 
 ## What the dashboard shows
 
-- Target and scan mode
-- Total findings and Critical/High count
-- Related CVE count
-- Executive summary and top risks
-- Searchable and severity-filtered findings
-- Detailed remediation cards
-- Scan history and new/resolved/unchanged issue comparisons
-- DNS, TLS, and Certificate Transparency evidence for passive scans
-- CSV and HTML report downloads
+- **📋 Ranked Findings & Remediation Cards:** Searchable, severity-filtered vulnerabilities with exploitability context and NVD/CISA KEV links.
+- **🛠️ Remediation Sandbox & Code Generator:** Instant drop-in configuration patches for Nginx, Apache, Caddy, Cloudflare Workers, Node.js/Helmet, DNS records (SPF/DMARC), and Linux UFW/iptables firewalls.
+- **🕸️ MITRE ATT&CK Threat Matrix:** Visual cyber kill-chain pipeline mapping findings to Reconnaissance, Initial Access, Discovery, Defense Evasion, and Credential Access.
+- **⚡ Real-Time "What-If" Patch Simulator:** Interactive patch simulator where selecting remediated items recalculates the Threat Index Score in real-time.
+- **🤖 AI SOC Security Copilot:** Interactive conversational AI analyst that answers technical queries, generates CISO briefings, simulates threat actor attack paths, and writes bash verification scripts.
+- **📊 Executive Insights & Vectors:** Severity distribution charts, top risk vectors, and configuration/network/CVE exposure breakdown.
+- **🌐 OSINT & Attack Surface Recon:** Deep DNS, TLS certificates, Certificate Transparency (`crt.sh`) subdomains, and open port telemetry.
+- **🔄 Scan History & Diff Tracking:** Side-by-side comparison with previous scans to track resolved vs. persisting vulnerabilities.
+- **📥 SIEM & Webhook Export:** Standalone HTML and CSV briefings, ArcSight/Splunk CEF syslog format, Elastic Common Schema (ECS), and live Webhook alerting for Slack/Discord/Teams.
 
 ## Where to find vulnerabilities
 
@@ -88,3 +88,4 @@ A finding is evidence-based guidance, not proof of exploitation. A related CVE m
 ## Safe testing rule
 
 Use `example.com` only for passive testing. Use active mode only against systems you own or have explicit permission to test.
+

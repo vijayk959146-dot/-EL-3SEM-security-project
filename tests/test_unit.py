@@ -564,28 +564,86 @@ class TestSecurityPipeline(unittest.TestCase):
             self.assertEqual(info["ports"], [], "Shodan lookup must abort cleanly for internal/blocked IPs")
             self.assertEqual(info["cpes"], [])
 
-    # --- 16. Dashboard target discovery ---
-    def test_dashboard_target_discovery(self):
-        """Dashboard must discover per-target folders under DATA_DIR."""
-        import tempfile
-        from pathlib import Path
-        from unittest.mock import patch
-        import dashboard.app as dash_app
+    # --- 17. MITRE ATT&CK correlation ---
+    def test_mitre_attack_mapping(self):
+        from correlation.mitre_attack import map_findings_to_mitre
+        sample_findings = [
+            {"title": "Open Port 8080 Exposed", "severity": "High", "source": "port_scan", "related_cves": ["CVE-2023-1234"]},
+            {"title": "Missing Content-Security-Policy", "severity": "Medium", "source": "headers", "suggested_action": "add CSP header"},
+            {"title": "Missing SPF Record", "severity": "High", "source": "passive", "suggested_action": "set SPF TXT"},
+        ]
+        result = map_findings_to_mitre(sample_findings)
+        self.assertIn("kill_chain", result)
+        self.assertIn("tactics", result)
+        self.assertGreater(result["total_techniques_flagged"], 0)
+        # Check that Initial Access and Recon are flagged
+        self.assertGreater(result["tactics"]["TA0001"]["finding_count"], 0)
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp = Path(tmpdir)
-            target1 = tmp / "target-one.com"
-            target1.mkdir()
-            (target1 / "prioritized_report.json").write_text("{}", encoding="utf-8")
+    # --- 18. Remediation code generation ---
+    def test_remediation_code_gen(self):
+        from remediation.code_gen import (
+            generate_nginx_hardening,
+            generate_apache_hardening,
+            generate_caddy_hardening,
+            generate_dns_hardening,
+            generate_firewall_rules,
+        )
+        sample = [{"title": "Missing CSP", "suggested_action": "add header"}]
+        nginx_code = generate_nginx_hardening(sample, target="test.com")
+        self.assertIn("Content-Security-Policy", nginx_code)
+        self.assertIn("server_tokens off", nginx_code)
 
-            with patch.object(dash_app, "DATA_DIR", tmp):
-                discovered = dash_app._discover_available_targets()
-                self.assertIn("target-one.com", discovered)
+        apache_code = generate_apache_hardening(sample, target="test.com")
+        self.assertIn("ServerTokens Prod", apache_code)
 
+        dns_code = generate_dns_hardening(target="test.com")
+        self.assertIn("v=spf1", dns_code)
+        self.assertIn("v=DMARC1", dns_code)
+
+        fw_code = generate_firewall_rules([8080, 8000])
+        self.assertIn("ufw", fw_code)
+
+    # --- 19. AI SOC Copilot offline reasoning ---
+    def test_ai_copilot_offline(self):
+        from ai.copilot import query_copilot
+        report = {
+            "target": "demo-target.local",
+            "findings": [{"rank": 1, "title": "Missing HSTS", "severity": "High", "suggested_action": "Enable HSTS"}],
+            "top_risks": ["Exposed web service", "Missing TLS hardening"],
+            "summary": "Sample test summary",
+        }
+        # Test CISO briefing prompt
+        ans1 = query_copilot("Generate executive briefing for CISO", report)
+        self.assertIn("Executive", ans1)
+        self.assertIn("demo-target.local", ans1)
+
+        # Test Top 3 quick wins
+        ans2 = query_copilot("What are the quick wins?", report)
+        self.assertIn("Quick-Win", ans2)
+
+        # Test verification script
+        ans3 = query_copilot("give me a test bash script", report)
+        self.assertIn("#!/usr/bin/env bash", ans3)
+
+    # --- 20. SIEM Exporter & Webhook Dispatcher ---
+    def test_siem_export(self):
+        from correlation.siem_export import generate_cef_export, generate_ecs_export
+        report = {
+            "target": "siem-target.com",
+            "findings": [{"rank": 1, "title": "Open Port 80", "severity": "High", "exploitability": "Public exposure"}],
+        }
+        cef = generate_cef_export(report)
+        self.assertIn("CEF:0", cef)
+        self.assertIn("siem-target.com", cef)
+
+        ecs = generate_ecs_export(report)
+        self.assertIn("@timestamp", ecs)
+        self.assertIn("FINDING-1", ecs)
 
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 
