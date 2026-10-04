@@ -22,8 +22,8 @@ if str(ROOT) not in sys.path:
 import streamlit as st
 import streamlit.components.v1 as components
 
+from backend.service import build_scan_request, run_scan
 from config import DATA_DIR, DEFAULT_PORTS, DEFAULT_TARGET, get_target_allowlist, is_target_allowed
-from run_pipeline import run_target
 from storage import diff_reports, generate_csv_report, generate_html_report, list_run_history, read_json, target_data_dir
 from verification.verify import (
     check_domain_verification,
@@ -403,12 +403,20 @@ with st.sidebar.expander("🚀 Run New Scan / Assessment", expanded=False):
         if not target_name:
             st.error("Please specify a target domain or IP.")
         else:
-            ports_list = [int(p.strip()) for p in scan_ports_input.split(",") if p.strip().isdigit()]
             with st.spinner(f"Running defensive pipeline against {target_name}..."):
                 try:
-                    run_target(target_name, ports_list, force_passive=force_passive)
-                    st.session_state["active_target"] = target_name
-                    st.success(f"Assessment completed for {target_name}!")
+                    scan_request = build_scan_request(
+                        target_name,
+                        scan_ports_input,
+                        force_passive=force_passive,
+                        requested_by="streamlit-dashboard",
+                    )
+                    scan_result = run_scan(scan_request)
+                    st.session_state["active_target"] = scan_result.target
+                    st.success(
+                        f"Assessment completed for {scan_result.target} "
+                        f"({scan_result.mode}, {scan_result.finding_count} finding(s))."
+                    )
                     _time.sleep(1)
                     st.rerun()
                 except Exception as ex:
@@ -565,16 +573,16 @@ if not report or not report.get("findings"):
     with col_e1:
         if st.button("⚡ Run Instant Localhost Scan", use_container_width=True, type="primary"):
             with st.spinner("Executing defensive pipeline for localhost..."):
-                run_target("localhost", DEFAULT_PORTS, force_passive=False)
-                st.session_state["active_target"] = "localhost"
+                scan_result = run_scan(build_scan_request("localhost", DEFAULT_PORTS, force_passive=False))
+                st.session_state["active_target"] = scan_result.target
                 st.success("Localhost scan complete!")
                 _time.sleep(1)
                 st.rerun()
     with col_e2:
         if st.button("🌐 Run Passive OSINT on example.com", use_container_width=True):
             with st.spinner("Gathering passive intelligence for example.com..."):
-                run_target("example.com", DEFAULT_PORTS, force_passive=True)
-                st.session_state["active_target"] = "example.com"
+                scan_result = run_scan(build_scan_request("example.com", DEFAULT_PORTS, force_passive=True))
+                st.session_state["active_target"] = scan_result.target
                 st.success("Passive OSINT scan complete!")
                 _time.sleep(1)
                 st.rerun()

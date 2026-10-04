@@ -10,61 +10,36 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from ai.prioritize import prioritize
-from config import DEFAULT_PORTS, DEFAULT_TARGET, is_target_allowed, require_allowed_target
-from correlation.correlate import correlate
-from discovery.passive import discover_passive
-from discovery.run import discover
-from storage import save_run_history, target_data_dir, write_json
+from backend.service import build_scan_request, run_scan
+from config import DEFAULT_PORTS, DEFAULT_TARGET, is_target_allowed
 
 
 def run_target(host: str, ports: list[int], force_passive: bool = False) -> None:
     """Execute the defensive pipeline in either Active or Passive mode."""
-    # Determine mode: Active requires allowlist or active verification
-    can_active = is_target_allowed(host) and not force_passive
-    mode_str = "ACTIVE (Port scanning & banner correlation)" if can_active else "PASSIVE OSINT (Read-only headers, DNS, TLS, CT logs)"
+    request = build_scan_request(host, ports, force_passive=force_passive, requested_by="cli")
+    can_active = is_target_allowed(request.target) and not request.force_passive
+    result_mode = "ACTIVE (Port scanning & banner correlation)"
+    passive_mode = "PASSIVE OSINT (Read-only headers, DNS, TLS, CT logs)"
 
     print(f"\n=======================================================")
-    print(f"[*] Starting Security Pipeline for Target: {host}")
-    print(f"[*] Operational Mode: {mode_str}")
-    if not can_active and not force_passive:
-        print(f"[*] Note: Target '{host}' is not in targets.allowlist and not verified.")
-        print(f"    Running in 100% passive mode. (To authorize active scans: python -m verification start {host})")
+    print(f"[*] Starting Security Pipeline for Target: {request.target}")
+    print(f"[*] Operational Mode: {result_mode if can_active else passive_mode}")
+    if request.force_passive:
+        print("[*] Passive mode forced by request.")
+    elif not can_active:
+        print(f"[*] Note: Target '{request.target}' is not in targets.allowlist and not verified.")
+        print(f"    Running in 100% passive mode. (To authorize active scans: python -m verification start {request.target})")
     print(f"=======================================================")
 
-    if can_active:
-        print(f"[1/3] Discovering {host} ports={ports} ...")
-        assets = discover(host, ports)
-        print(f"      open ports: {len(assets.ports)}  method: {assets.scan_method}")
-        if "fallback" in assets.scan_method:
-            print("      [NOTE] Nmap binary not found in PATH; used TCP connect fallback scan.")
-    else:
-        print(f"[1/3] Gathering passive intelligence for {host} (no port scanning) ...")
-        assets = discover_passive(host)
-        print(f"      reachable: {assets.http.reachable if assets.http else False}  method: {assets.scan_method}")
-
-    print("[2/3] Correlating with NVD, CISA KEV, and FIRST EPSS ...")
-    correlated = correlate(assets.to_dict())
-    cve_count = sum(len(a.cves) for a in correlated.assets)
-    kev_count = sum(1 for a in correlated.assets for c in a.cves if getattr(c, "kev", False) or (isinstance(c, dict) and c.get("kev")))
-    print(f"      assets: {len(correlated.assets)}  CVE hits: {cve_count}  (KEV exploited: {kev_count})")
-
-    print("[3/3] Prioritizing with Bedrock (fallback if needed) ...")
-    report = prioritize(correlated.to_dict())
-    print(f"      findings: {len(report.findings)}  llm={report.used_llm}")
-    if not report.used_llm:
-        fallback_reasons = [n for n in report.notes if "fallback" in n.lower() or "reason" in n.lower()]
-        reason_msg = fallback_reasons[-1] if fallback_reasons else "CVSS heuristic ranking"
-        print(f"      [NOTE] Bedrock not reached; used CVSS heuristic fallback. ({reason_msg})")
-
-    # Save target-specific report and timestamped history — both inside data/<target>/
-    report_path = write_json("prioritized_report.json", report, target=host)
-    write_json("discovered_assets.json", assets, target=host)
-    write_json("correlated_findings.json", correlated, target=host)
-    hist_path = save_run_history(host, report.to_dict())
-    out_dir = target_data_dir(host)
-    print(f"[+] Results written to {out_dir}")
-    print(f"[+] Archived historical run to {hist_path.name}")
+    result = run_scan(request)
+    print(f"[1/3] Discovery complete via {result.scan_method} ({result.mode.upper()})")
+    print("[2/3] Correlation complete with NVD, CISA KEV, and FIRST EPSS")
+    print(f"[3/3] Prioritization complete: findings={result.finding_count} llm={result.used_llm}")
+    for note in result.notes:
+        if "fallback" in note.lower() or "not allowlisted" in note.lower() or "nmap" in note.lower():
+            print(f"      [NOTE] {note}")
+    print(f"[+] Results written to {result.output_dir}")
+    print(f"[+] Archived historical run to {Path(result.history_path).name}")
 
 
 def main() -> None:

@@ -270,12 +270,12 @@ class TestSecurityPipeline(unittest.TestCase):
 
         # Test pipeline routing ensures unverified targets use passive discovery only
         from run_pipeline import run_target
-        with patch("run_pipeline.discover_passive") as mock_passive, \
-             patch("run_pipeline.discover") as mock_active, \
-             patch("run_pipeline.correlate") as mock_correlate, \
-             patch("run_pipeline.prioritize") as mock_prioritize, \
-             patch("run_pipeline.write_json"), \
-             patch("run_pipeline.save_run_history"):
+        with patch("backend.service.discover_passive") as mock_passive, \
+             patch("backend.service.discover") as mock_active, \
+             patch("backend.service.correlate") as mock_correlate, \
+             patch("backend.service.prioritize") as mock_prioritize, \
+             patch("backend.service.write_json"), \
+             patch("backend.service.save_run_history"):
 
             mock_passive.return_value = DiscoveredAssets(
                 target=unverified_host,
@@ -718,6 +718,61 @@ class TestSecurityPipeline(unittest.TestCase):
         _, kwargs = mock_safe_fetch.call_args
         self.assertEqual(kwargs["method"], "POST")
         self.assertEqual(kwargs["headers"]["Content-Type"], "application/json")
+
+    def test_backend_port_validation(self):
+        from backend.service import parse_ports
+
+        self.assertEqual(parse_ports("443,80,443"), [80, 443])
+        with self.assertRaises(ValueError):
+            parse_ports("80,not-a-port")
+        with self.assertRaises(ValueError):
+            parse_ports("0,443")
+        with self.assertRaises(ValueError):
+            parse_ports(",".join(str(p) for p in range(1, 40)))
+
+    def test_backend_request_normalizes_target(self):
+        from backend.service import build_scan_request
+
+        req = build_scan_request("HTTPS://Example.COM:443/path", "443", force_passive=True)
+        self.assertEqual(req.target, "example.com")
+        self.assertEqual(req.ports, [443])
+        self.assertTrue(req.force_passive)
+
+    def test_backend_run_scan_routes_unverified_to_passive(self):
+        from backend.service import build_scan_request, run_scan
+        from schemas import CorrelatedFindings, DiscoveredAssets, HttpCheck, PrioritizedReport, TlsGrade
+
+        assets = DiscoveredAssets(
+            target="unverified-example.com",
+            scan_method="passive-osint",
+            ports=[],
+            http=HttpCheck(url="https://unverified-example.com", reachable=True, uses_tls=True),
+            tls=TlsGrade(skipped=True, reason="test"),
+            mode="passive",
+        )
+        report = PrioritizedReport(
+            target="unverified-example.com",
+            summary="ok",
+            top_risks=[],
+            findings=[],
+            model_id="heuristic",
+            used_llm=False,
+            mode="passive",
+        )
+
+        with patch("backend.service.is_target_allowed", return_value=False), \
+             patch("backend.service.discover_passive", return_value=assets) as mock_passive, \
+             patch("backend.service.discover") as mock_active, \
+             patch("backend.service.correlate", return_value=CorrelatedFindings(target="unverified-example.com", assets=[], mode="passive")), \
+             patch("backend.service.prioritize", return_value=report), \
+             patch("backend.service.write_json", return_value=Path("data/unverified-example.com/prioritized_report.json")), \
+             patch("backend.service.save_run_history", return_value=Path("data/unverified-example.com/history/run.json")), \
+             patch("backend.service.target_data_dir", return_value=Path("data/unverified-example.com")):
+            result = run_scan(build_scan_request("unverified-example.com", "80,443"))
+
+        self.assertEqual(result.mode, "passive")
+        mock_passive.assert_called_once_with("unverified-example.com")
+        mock_active.assert_not_called()
 
 
 if __name__ == "__main__":

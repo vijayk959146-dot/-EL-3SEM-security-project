@@ -109,10 +109,27 @@ When interacting with external web endpoints, the tool enforces strict Server-Si
                       │
                       ▼
         [4] Dashboard & Evaluation Suite
+            ├── Backend Service Layer (`backend/service.py`)
             ├── Streamlit Interactive UI with Domain Verification Panel
             ├── Scan History & Diff Analysis (New / Resolved / Unchanged)
             └── CSV & HTML Report Downloads
 ```
+
+---
+
+## 🧩 Backend Service Layer
+
+The project now routes CLI and dashboard scan launches through
+`backend/service.py`, a UI-independent backend boundary that handles:
+
+- Scan request validation and target normalization.
+- TCP port parsing, de-duplication, range checks, and scan-size limits.
+- Active-vs-passive mode selection based on allowlist or verification state.
+- Discovery, correlation, prioritization, report persistence, and history writes.
+- A structured `ScanResult` contract for current UI code and future API layers.
+
+This makes the dashboard thinner and keeps backend behavior consistent whether a
+scan starts from Streamlit, the CLI, or a future FastAPI/worker deployment.
 
 ---
 
