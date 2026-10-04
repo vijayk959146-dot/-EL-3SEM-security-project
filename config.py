@@ -32,7 +32,7 @@ DEFAULT_PORTS = [
 AWS_REGION = os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", "us-east-1"))
 BEDROCK_MODEL_ID = os.getenv(
     "BEDROCK_MODEL_ID",
-    "anthropic.claude-3-5-sonnet-20241022-v2:0",
+    "amazon.nova-micro-v1:0",
 )
 NVD_API_KEY = os.getenv("NVD_API_KEY", "").strip()
 

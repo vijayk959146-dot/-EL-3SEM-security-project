@@ -74,23 +74,15 @@ Findings:
 
 User Request: {prompt_text}"""
 
-        payload = {
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 1200,
-            "temperature": 0.3,
-            "system": system_prompt,
-            "messages": [{"role": "user", "content": user_content}],
-        }
-
-        response = client.invoke_model(
+        response = client.converse(
             modelId=BEDROCK_MODEL_ID,
-            body=json.dumps(payload),
-            contentType="application/json",
-            accept="application/json",
+            system=[{"text": system_prompt}],
+            messages=[{"role": "user", "content": [{"text": user_content}]}],
+            inferenceConfig={"maxTokens": 1200, "temperature": 0.3},
         )
-        body = json.loads(response["body"].read().decode("utf-8"))
-        text = body["content"][0]["text"].strip()
-        return text
+        parts = response.get("output", {}).get("message", {}).get("content", [])
+        text = "".join(p.get("text", "") for p in parts if isinstance(p, dict) and "text" in p)
+        return text.strip() or None
     except Exception:
         return None
 

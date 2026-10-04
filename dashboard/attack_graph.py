@@ -174,7 +174,7 @@ def render_attack_surface_graph_html(
             pointer-events: none;
         }}
     </style>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
     </head>
     <body>
     <div id="graph-container">
@@ -189,7 +189,7 @@ def render_attack_surface_graph_html(
             <div class="legend-item"><span class="legend-dot" style="background:#a855f7;"></span> Subdomain</div>
             <div class="legend-item"><span class="legend-dot" style="background:#3b82f6;"></span> IP Node</div>
         </div>
-        <svg id="network-svg" width="100%" height="100%"></svg>
+        <svg id="network-svg" width="100%" height="100%" style="min-height:460px;"></svg>
     </div>
 
     <script>
@@ -197,7 +197,7 @@ def render_attack_surface_graph_html(
     const links = {links_json};
 
     const container = document.getElementById('graph-container');
-    const width = container.clientWidth || 900;
+    const width = Math.max(window.innerWidth || 0, container.clientWidth || 0, 900);
     const height = 480;
 
     const svg = d3.select("#network-svg")

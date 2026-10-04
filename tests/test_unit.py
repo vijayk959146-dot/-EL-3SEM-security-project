@@ -621,18 +621,19 @@ class TestSecurityPipeline(unittest.TestCase):
             "top_risks": ["Exposed web service", "Missing TLS hardening"],
             "summary": "Sample test summary",
         }
-        # Test CISO briefing prompt
-        ans1 = query_copilot("Generate executive briefing for CISO", report)
-        self.assertIn("Executive", ans1)
-        self.assertIn("demo-target.local", ans1)
+        with patch("ai.copilot._call_bedrock_copilot", return_value=None):
+            # Test CISO briefing prompt
+            ans1 = query_copilot("Generate executive briefing for CISO", report)
+            self.assertIn("Executive", ans1)
+            self.assertIn("demo-target.local", ans1)
 
-        # Test Top 3 quick wins
-        ans2 = query_copilot("What are the quick wins?", report)
-        self.assertIn("Quick-Win", ans2)
+            # Test Top 3 quick wins
+            ans2 = query_copilot("What are the quick wins?", report)
+            self.assertIn("Quick-Win", ans2)
 
-        # Test verification script
-        ans3 = query_copilot("give me a test bash script", report)
-        self.assertIn("#!/usr/bin/env bash", ans3)
+            # Test verification script
+            ans3 = query_copilot("give me a test bash script", report)
+            self.assertIn("#!/usr/bin/env bash", ans3)
 
     # --- 21. OWASP Top 10 & NIST CSF Compliance Engine ---
     def test_compliance_engine(self):

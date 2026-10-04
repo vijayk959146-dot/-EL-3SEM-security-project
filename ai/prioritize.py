@@ -77,22 +77,50 @@ def _strip_fences(text: str) -> str:
     return text.strip()
 
 
-def _invoke_bedrock(user_payload: str) -> str:
+def _invoke_bedrock(user_payload: str) -> tuple[str, str]:
     """
     Invoke Amazon Bedrock using the model-agnostic Converse API.
     Works transparently with Amazon Nova, Anthropic Claude, Meta Llama, and Mistral.
+    Returns (response_text, model_id_used).
     """
     import boto3
 
     client = boto3.client("bedrock-runtime", region_name=AWS_REGION)
-    response = client.converse(
-        modelId=BEDROCK_MODEL_ID,
-        system=[{"text": SYSTEM_RULES}],
-        messages=[{"role": "user", "content": [{"text": user_payload}]}],
-        inferenceConfig={"maxTokens": 4000, "temperature": 0.2},
-    )
-    parts = response.get("output", {}).get("message", {}).get("content", [])
-    return "".join(p.get("text", "") for p in parts if isinstance(p, dict) and "text" in p)
+    candidates = [BEDROCK_MODEL_ID]
+    for fallback in [
+        "amazon.nova-micro-v1:0",
+        "amazon.nova-lite-v1:0",
+        "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+        "anthropic.claude-3-5-haiku-20241022-v1:0",
+        "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "anthropic.claude-3-haiku-20240307-v1:0",
+    ]:
+        if fallback not in candidates:
+            candidates.append(fallback)
+
+    last_exc = None
+    for model_id in candidates:
+        try:
+            response = client.converse(
+                modelId=model_id,
+                system=[{"text": SYSTEM_RULES}],
+                messages=[{"role": "user", "content": [{"text": user_payload}]}],
+                inferenceConfig={"maxTokens": 4000, "temperature": 0.2},
+            )
+            parts = response.get("output", {}).get("message", {}).get("content", [])
+            text = "".join(p.get("text", "") for p in parts if isinstance(p, dict) and "text" in p)
+            if text:
+                return text, model_id
+        except Exception as exc:
+            last_exc = exc
+            msg = str(exc)
+            if "UnrecognizedClientException" in msg or "AccessDeniedException" in msg or "Credentials" in msg:
+                raise exc
+            continue
+
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("Bedrock invocation failed: No models returned a response.")
 
 
 def _parse_llm_json(text: str) -> dict[str, Any]:
@@ -293,7 +321,7 @@ def _heuristic_report(correlated: dict) -> PrioritizedReport:
     )
 
 
-def _from_llm_dict(correlated: dict, data: dict, used_llm: bool, note: str = "") -> PrioritizedReport:
+def _from_llm_dict(correlated: dict, data: dict, used_llm: bool, note: str = "", model_id: str = "") -> PrioritizedReport:
     findings = []
     for raw in data.get("findings") or []:
         findings.append(
@@ -309,12 +337,13 @@ def _from_llm_dict(correlated: dict, data: dict, used_llm: bool, note: str = "")
             )
         )
     notes = [note] if note else []
+    resolved_model = model_id or (BEDROCK_MODEL_ID if used_llm else "heuristic-fallback")
     return PrioritizedReport(
         target=correlated.get("target", ""),
         summary=str(data.get("summary") or ""),
         top_risks=list(data.get("top_risks") or [])[:3],
         findings=findings,
-        model_id=BEDROCK_MODEL_ID if used_llm else "heuristic-fallback",
+        model_id=resolved_model,
         used_llm=used_llm,
         mode=correlated.get("mode", "active"),
         notes=notes,
@@ -364,12 +393,12 @@ def prioritize(correlated: dict | None = None) -> PrioritizedReport:
 
     valid_first_try = True
     try:
-        text = _invoke_bedrock(user_msg)
+        text, used_model = _invoke_bedrock(user_msg)
         try:
             parsed = _parse_llm_json(text)
         except json.JSONDecodeError:
             valid_first_try = False
-            text = _invoke_bedrock(user_msg + "\n\nYour previous reply was not valid JSON. Return valid JSON only adhering to the schema.")
+            text, used_model = _invoke_bedrock(user_msg + "\n\nYour previous reply was not valid JSON. Return valid JSON only adhering to the schema.")
             parsed = _parse_llm_json(text)
 
         # Validate the LLM response before accepting it
@@ -378,7 +407,7 @@ def prioritize(correlated: dict | None = None) -> PrioritizedReport:
             # Reject the LLM response and fall back to heuristic
             raise ValueError("LLM output failed validation: " + "; ".join(validation_errors))
 
-        report = _from_llm_dict(correlated, parsed, used_llm=True)
+        report = _from_llm_dict(correlated, parsed, used_llm=True, model_id=used_model)
         report.notes.append(f"AI JSON validation: {'Valid on 1st attempt' if valid_first_try else 'Recovered on retry'}")
     except Exception as exc:
         report = _heuristic_report(correlated)
