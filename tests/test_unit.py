@@ -9,8 +9,15 @@ Comprehensive offline unit tests (using standard library unittest) for:
 
 from __future__ import annotations
 
+import os
+import sys
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from ai.prioritize import _heuristic_report, _sanitize_text
 from config import is_target_allowed, require_allowed_target
@@ -330,6 +337,8 @@ class TestSecurityPipeline(unittest.TestCase):
 
         # 2. Test CSV Formula Injection Neutralization
         csv_out = generate_csv_report(evil_report)
+        self.assertIn("'=SUM(1+1);cmd|'/C calc'!A0", csv_out)
+        self.assertNotIn("\n=SUM", csv_out)
     # 12. IPv6 and URL host normalization tests
     def test_ipv6_and_url_normalization(self):
         from config import _normalize_host, is_target_allowed
@@ -654,6 +663,40 @@ class TestSecurityPipeline(unittest.TestCase):
 
         modsec = generate_modsecurity_rules(sample, target="test.com")
         self.assertIn("SecRuleEngine", modsec)
+
+    # --- 16. Attack graph XSS escaping ---
+    def test_attack_graph_escapes_untrusted_labels(self):
+        from dashboard.attack_graph import render_attack_surface_graph_html
+
+        html_out = render_attack_surface_graph_html(
+            target='evil.com<script>alert(1)</script>',
+            findings=[{"title": "<img src=x onerror=alert(1)>", "severity": "High", "exploitability": "n/a"}],
+            ports=[{"port": 443, "service": "https"}],
+            subdomains=["<svg/onload=alert(1)>"],
+            ips=["1.2.3.4"],
+        )
+        self.assertNotIn("<script>alert(1)</script>", html_out)
+        self.assertNotIn("<img src=x onerror=alert(1)>", html_out)
+        self.assertIn("&lt;script&gt;", html_out)
+
+    # --- 20. requests 2.32 IP pinning hook ---
+    def test_pinned_adapter_tls_context_uses_validated_ip(self):
+        from types import SimpleNamespace
+        from discovery.safe_fetch import PinnedIPAdapter
+
+        adapter = PinnedIPAdapter(hostname="target-site.com", pinned_ip="93.184.216.34")
+        request = SimpleNamespace(url="https://target-site.com/health")
+        conn = adapter.get_connection_with_tls_context(request, verify=True)
+        self.assertEqual(conn.host, "93.184.216.34")
+        self.assertEqual(conn.assert_hostname, "target-site.com")
+
+    def test_http_pinning_omits_tls_sni_kwargs(self):
+        from discovery.safe_fetch import PinnedIPAdapter
+
+        adapter = PinnedIPAdapter(hostname="httpbin.org", pinned_ip="1.2.3.4")
+        conn = adapter.get_connection("http://httpbin.org/")
+        self.assertEqual(conn.host, "1.2.3.4")
+        self.assertNotEqual(getattr(conn, "assert_hostname", None), "httpbin.org")
 
 
 if __name__ == "__main__":
