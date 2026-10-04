@@ -9,8 +9,9 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from typing import Any
-import urllib.request
-import urllib.error
+from urllib.parse import urlparse
+
+from discovery.safe_fetch import SafeFetchError, safe_fetch
 
 
 def generate_cef_export(report: dict[str, Any]) -> str:
@@ -73,6 +74,12 @@ def generate_ecs_export(report: dict[str, Any]) -> str:
 
 def send_webhook_alert(webhook_url: str, report: dict[str, Any]) -> tuple[bool, str]:
     """Dispatch a formatted webhook alert to Slack / Discord / Generic endpoint."""
+    parsed = urlparse(webhook_url.strip())
+    if parsed.scheme.lower() != "https":
+        return False, "Webhook URL must use HTTPS."
+    if not parsed.hostname:
+        return False, "Webhook URL is missing a hostname."
+
     target = report.get("target", "Unknown")
     findings = report.get("findings", [])
     high_crit = [f for f in findings if str(f.get("severity", "")).title() in ["Critical", "High"]]
@@ -96,15 +103,18 @@ def send_webhook_alert(webhook_url: str, report: dict[str, Any]) -> tuple[bool, 
 
     try:
         data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
+        response = safe_fetch(
             webhook_url,
             data=data,
             headers={"Content-Type": "application/json", "User-Agent": "AttackSurfaceSOC/1.0"},
             method="POST",
+            max_bytes=64 * 1024,
+            timeout=8,
         )
-        with urllib.request.urlopen(req, timeout=8) as response:
-            if 200 <= response.status < 300:
-                return True, f"Successfully delivered alert payload (HTTP {response.status})"
-            return False, f"Server responded with HTTP {response.status}"
+        if 200 <= response.status_code < 300:
+            return True, f"Successfully delivered alert payload (HTTP {response.status_code})"
+        return False, f"Server responded with HTTP {response.status_code}"
+    except SafeFetchError as ex:
+        return False, f"Webhook URL blocked by outbound safety policy: {ex}"
     except Exception as ex:
         return False, f"Webhook delivery failed: {str(ex)}"

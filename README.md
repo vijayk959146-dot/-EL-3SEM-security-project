@@ -133,12 +133,13 @@ AWS_SECRET_ACCESS_KEY=your_secret_key
 AWS_REGION=us-east-1
 BEDROCK_MODEL_ID=amazon.nova-micro-v1:0
 DASHBOARD_PASSWORD=replace_with_a_long_random_password
-ALLOW_ANONYMOUS_DASHBOARD=true  # Demo mode; use false with DASHBOARD_PASSWORD for private deployments
+ALLOW_ANONYMOUS_DASHBOARD=false  # Set true only for private local demos with no sensitive reports
 ```
 
-For Elastic Beanstalk, set `DASHBOARD_PASSWORD` and `ALLOW_ANONYMOUS_DASHBOARD=false`
-under the environment properties. The dashboard fails closed when no password is
-configured. Anonymous access should only be enabled for a private local demonstration.
+For Elastic Beanstalk, set `DASHBOARD_PASSWORD` and keep
+`ALLOW_ANONYMOUS_DASHBOARD=false` under the environment properties. The
+dashboard fails closed when no password is configured. Anonymous access should
+only be enabled for a private local demonstration.
 
 ### 2. Running Scans
 

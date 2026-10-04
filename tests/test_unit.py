@@ -698,6 +698,27 @@ class TestSecurityPipeline(unittest.TestCase):
         self.assertEqual(conn.host, "1.2.3.4")
         self.assertNotEqual(getattr(conn, "assert_hostname", None), "httpbin.org")
 
+    def test_webhook_alert_requires_https(self):
+        from correlation.siem_export import send_webhook_alert
+
+        ok, msg = send_webhook_alert("http://hooks.example.test/services/abc", {"target": "demo", "findings": []})
+        self.assertFalse(ok)
+        self.assertIn("HTTPS", msg)
+
+    def test_webhook_alert_uses_safe_fetch(self):
+        from types import SimpleNamespace
+        from correlation.siem_export import send_webhook_alert
+
+        with patch("correlation.siem_export.safe_fetch", return_value=SimpleNamespace(status_code=204)) as mock_safe_fetch:
+            ok, msg = send_webhook_alert("https://hooks.example.test/services/abc", {"target": "demo", "findings": []})
+
+        self.assertTrue(ok)
+        self.assertIn("HTTP 204", msg)
+        mock_safe_fetch.assert_called_once()
+        _, kwargs = mock_safe_fetch.call_args
+        self.assertEqual(kwargs["method"], "POST")
+        self.assertEqual(kwargs["headers"]["Content-Type"], "application/json")
+
 
 if __name__ == "__main__":
     unittest.main()
