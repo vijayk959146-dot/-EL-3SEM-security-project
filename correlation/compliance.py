@@ -32,12 +32,14 @@ def map_compliance(findings: list[dict[str, Any]]) -> dict[str, Any]:
         source = str(f.get("source", "")).lower()
         cves = f.get("related_cves", [])
 
+        blob = f"{title} {matters} {source}"
+
         # A02 Cryptographic Failures (TLS, SSL, HSTS, plain HTTP)
-        if "tls" in title or "ssl" in title or "hsts" in title or "unencrypted" in title or "certificate" in title:
+        if "tls" in blob or "ssl" in blob or "hsts" in blob or "unencrypted" in blob or "certificate" in blob:
             owasp_hits["A02:2021"].append(f)
 
         # A05 Security Misconfiguration (Missing headers, CORS, Cookie flags, Server tokens)
-        if "header" in title or "csp" in title or "frame" in title or "cookie" in title or "disclosure" in title or "spf" in title or "dmarc" in title or "config" in source:
+        if "header" in blob or "csp" in blob or "frame" in blob or "cookie" in blob or "disclosure" in blob or "spf" in blob or "dmarc" in blob or "config" in source:
             owasp_hits["A05:2021"].append(f)
 
         # A06 Vulnerable Components (CVEs, outdated versions)
@@ -45,8 +47,16 @@ def map_compliance(findings: list[dict[str, Any]]) -> dict[str, Any]:
             owasp_hits["A06:2021"].append(f)
 
         # A01 Broken Access Control (Open administrative ports, unauthenticated exposure)
-        if "port" in title or "port_scan" in source:
+        if "port" in title or "port_scan" in source or "cors" in blob:
             owasp_hits["A01:2021"].append(f)
+
+        # A07 Identification and Authentication Failures (cookie flags, session)
+        if "cookie" in blob or "samesite" in blob or "session" in blob:
+            owasp_hits["A07:2021"].append(f)
+
+        # A10 SSRF indicators in public evidence (informational mapping only)
+        if "ssrf" in blob or "metadata" in blob:
+            owasp_hits["A10:2021"].append(f)
 
     # Compute compliance score (100 - penalties)
     total_violations = sum(len(items) for items in owasp_hits.values())

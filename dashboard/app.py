@@ -32,7 +32,7 @@ from verification.verify import (
     load_verified_targets,
 )
 from correlation.mitre_attack import map_findings_to_mitre
-from correlation.compliance import map_compliance
+from correlation.compliance import OWASP_CATEGORIES, map_compliance
 from correlation.siem_export import generate_cef_export, generate_ecs_export, send_webhook_alert
 from remediation.code_gen import (
     generate_nginx_hardening,
@@ -904,6 +904,13 @@ with tab_remediation:
         horizontal=True,
     )
 
+    exposed_ports: list[int] = []
+    for p in discovered_ports:
+        if isinstance(p, dict) and str(p.get("port", "")).isdigit():
+            exposed_ports.append(int(p["port"]))
+        elif isinstance(p, int):
+            exposed_ports.append(p)
+
     if "Nginx" in rem_choice:
         code_text = generate_nginx_hardening(findings, target=target)
         lang = "nginx"
@@ -929,7 +936,7 @@ with tab_remediation:
         lang = "dns"
         filename = f"dns_security_{target}.zone"
     else:
-        code_text = generate_firewall_rules()
+        code_text = generate_firewall_rules(exposed_ports or None)
         lang = "bash"
         filename = f"firewall_rules_{target}.sh"
 
@@ -959,9 +966,9 @@ with tab_compliance:
         st.markdown("#### 🌐 OWASP Top 10 (2021) Breakdown")
         for cat_id, items in comp_data["owasp_categories"].items():
             cat_info = OWASP_CATEGORIES.get(cat_id, {})
-            has_violation = len(items) > 0
-            status_badge = f"<span style='color:#ef4444;font-weight:700;'>❌ {len(items)} Violation(s)</span>" if has_violation else "<span style='color:#10b981;font-weight:700;'>✅ Compliant</span>"
-            with st.expander(f"{cat_info.get('icon', '📌')} {cat_id}: {cat_info.get('title')} — {status_badge}"):
+            violation_count = len(items)
+            status_label = f"❌ {violation_count} Violation(s)" if violation_count else "✅ Compliant"
+            with st.expander(f"{cat_info.get('icon', '📌')} {cat_id}: {cat_info.get('title')} — {status_label}"):
                 st.markdown(f"**Standard Risk Level:** `{cat_info.get('risk', 'Medium')}`")
                 if items:
                     st.markdown("**Correlated Target Exposures:**")
@@ -1173,39 +1180,39 @@ with tab_copilot:
         unsafe_allow_html=True,
     )
 
+    if "copilot_answer" not in st.session_state:
+        st.session_state.copilot_answer = ""
+
     q_col1, q_col2, q_col3, q_col4 = st.columns(4)
-    quick_prompt = None
     with q_col1:
         if st.button("📊 CISO Executive Brief", use_container_width=True):
-            quick_prompt = "Generate an executive cyber risk briefing for CISO and senior management."
+            st.session_state.copilot_user_input = "Generate an executive cyber risk briefing for CISO and senior management."
     with q_col2:
         if st.button("⚡ Top 3 Quick Wins", use_container_width=True):
-            quick_prompt = "What are the top 3 quick-win fixes that provide the highest immediate security impact & risk reduction?"
+            st.session_state.copilot_user_input = "What are the top 3 quick-win fixes that provide the highest immediate security impact & risk reduction?"
     with q_col3:
         if st.button("🧪 Bash Verification Script", use_container_width=True):
-            quick_prompt = "Generate a comprehensive bash script to test and verify these fixes."
+            st.session_state.copilot_user_input = "Generate a comprehensive bash script to test and verify these fixes."
     with q_col4:
         if st.button("🎭 Simulate Attack Path", use_container_width=True):
-            quick_prompt = "Simulate how a threat actor might attempt to chain these attack surface exposures."
+            st.session_state.copilot_user_input = "Simulate how a threat actor might attempt to chain these attack surface exposures."
 
-    user_query = st.text_input(
+    st.text_area(
         "Ask AI SOC Copilot a custom question:",
-        value=quick_prompt or "",
         placeholder="e.g. How do I harden my reverse proxy against clickjacking and MIME sniffing?",
         key="copilot_user_input",
+        height=90,
     )
+    if st.button("🚀 Ask SOC Copilot", type="primary"):
+        copilot_query = str(st.session_state.get("copilot_user_input") or "").strip()
+        if not copilot_query:
+            st.warning("Enter a question or choose a one-click prompt first.")
+        else:
+            with st.spinner("AI SOC Analyst reasoning with report telemetry..."):
+                st.session_state.copilot_answer = query_copilot(copilot_query, report)
 
-    if user_query:
-        with st.spinner("AI SOC Analyst reasoning with report telemetry..."):
-            ans = query_copilot(user_query, report)
-            st.markdown(
-                f"""
-                <div style="background:rgba(15,23,42,0.85);border:1px solid rgba(56,189,248,0.3);border-radius:10px;padding:1.4rem;margin-top:1rem;">
-                """,
-                unsafe_allow_html=True,
-            )
-            st.markdown(ans)
-            st.markdown("</div>", unsafe_allow_html=True)
+    if st.session_state.copilot_answer:
+        st.markdown(st.session_state.copilot_answer)
 
 
 # ==========================================

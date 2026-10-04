@@ -1,0 +1,87 @@
+{
+  "target": "httpbin.org",
+  "summary": "The target lacks essential security headers and has some misconfigurations that could expose it to various attacks. Immediate action is needed to mitigate these risks.",
+  "top_risks": [
+    "Missing security headers",
+    "Wildcard CORS policy",
+    "Server version disclosure"
+  ],
+  "findings": [
+    {
+      "rank": 1,
+      "title": "Missing Content Security Policy (CSP)",
+      "severity": "Critical",
+      "exploitability": "Critical for mitigating XSS attacks",
+      "why_it_matters": "CSP helps prevent cross-site scripting (XSS) attacks by controlling which resources are allowed to load.",
+      "suggested_action": "Add the following CSP header to your web server configuration:\n\n```nginx\nadd_header Content-Security-Policy \"default-src 'self';\";\n```\n\nFor Express.js using Helmet:\n\n```javascript\nhelmet.contentSecurityPolicy({ directives: { defaultSrc: [\\'self\\'] } })\n```\n",
+      "related_cves": [],
+      "source": "config issue"
+    },
+    {
+      "rank": 2,
+      "title": "Wildcard CORS Policy",
+      "severity": "High",
+      "exploitability": "Potentially allows cross-origin resource sharing attacks",
+      "why_it_matters": "A wildcard CORS policy can allow any external domain to access your resources, which can lead to data leakage or other attacks.",
+      "suggested_action": "Restrict CORS to trusted domains. For example, in Nginx:\n\n```nginx\nadd_header Access-Control-Allow-Origin \"https://trusteddomain.com\";\n```\n\nFor Express.js using Helmet:\n\n```javascript\nhelmet.cors({ origin: 'https://trusteddomain.com' })\n```\n",
+      "related_cves": [],
+      "source": "config issue"
+    },
+    {
+      "rank": 3,
+      "title": "Server Version Disclosure",
+      "severity": "Medium",
+      "exploitability": "Eases targeted attacks based on known vulnerabilities",
+      "why_it_matters": "Disclosing server software and version can help attackers find known vulnerabilities to exploit.",
+      "suggested_action": "Remove or modify the Server header to hide version information. For Nginx:\n\n```nginx\nserver_tokens off;\n```\n\nFor Express.js:\n\n```javascript\napp.use((req, res, next) => {\n  res.removeHeader('Server');\n  next();\n})\n```\n",
+      "related_cves": [],
+      "source": "config issue"
+    },
+    {
+      "rank": 4,
+      "title": "Missing X-Content-Type-Options",
+      "severity": "Medium",
+      "exploitability": "Helps prevent MIME type sniffing",
+      "why_it_matters": "This header helps prevent MIME type sniffing attacks by ensuring browsers interpret files according to their declared type.",
+      "suggested_action": "Add the following header to your web server configuration:\n\n```nginx\nadd_header X-Content-Type-Options \"nosniff\";\n```\n\nFor Express.js using Helmet:\n\n```javascript\nhelmet.xContentTypeOptions()\n```\n",
+      "related_cves": [],
+      "source": "config issue"
+    },
+    {
+      "rank": 5,
+      "title": "Missing X-Frame-Options",
+      "severity": "Medium",
+      "exploitability": "Prevents clickjacking attacks",
+      "why_it_matters": "This header helps protect against clickjacking attacks by specifying whether a browser should be allowed to render a page in a <frame>, <iframe>, <embed>, or <object>.",
+      "suggested_action": "Add the following header to your web server configuration:\n\n```nginx\nadd_header X-Frame-Options \"DENY\";\n```\n\nFor Express.js using Helmet:\n\n```javascript\nhelmet.frameguard({ action: 'deny' })\n```\n",
+      "related_cves": [],
+      "source": "config issue"
+    },
+    {
+      "rank": 6,
+      "title": "Missing Referrer-Policy",
+      "severity": "Medium",
+      "exploitability": "Protects against information leakage",
+      "why_it_matters": "This header controls the amount of referrer information sent along with requests.",
+      "suggested_action": "Add the following header to your web server configuration:\n\n```nginx\nadd_header Referrer-Policy \"no-referrer\";\n```\n\nFor Express.js using Helmet:\n\n```javascript\nhelmet.referrerPolicy({ policy: 'no-referrer' })\n```\n",
+      "related_cves": [],
+      "source": "config issue"
+    },
+    {
+      "rank": 7,
+      "title": "Missing Strict-Transport-Security",
+      "severity": "Medium",
+      "exploitability": "Enforces secure, HTTPS-only connections",
+      "why_it_matters": "This header helps protect users from protocol downgrade attacks and cookie hijacking.",
+      "suggested_action": "Add the following header to your web server configuration:\n\n```nginx\nadd_header Strict-Transport-Security \"max-age=31536000; includeSubDomains; preload\";\n```\n\nFor Express.js using Helmet:\n\n```javascript\nhelmet.hsts({ maxAge: 31536000, includeSubDomains: true, preload: true })\n```\n",
+      "related_cves": [],
+      "source": "config issue"
+    }
+  ],
+  "model_id": "amazon.nova-micro-v1:0",
+  "used_llm": true,
+  "mode": "passive",
+  "notes": [
+    "AI JSON validation: Valid on 1st attempt"
+  ]
+}

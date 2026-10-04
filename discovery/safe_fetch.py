@@ -54,8 +54,6 @@ class PinnedIPAdapter(requests.adapters.HTTPAdapter):
         super().__init__(*args, **kwargs)
 
     def init_poolmanager(self, connections: int, maxsize: int, block: bool = False, **pool_kwargs: Any) -> None:
-        pool_kwargs["server_hostname"] = self.hostname
-        pool_kwargs["assert_hostname"] = self.hostname
         self.poolmanager = PoolManager(
             num_pools=connections,
             maxsize=maxsize,
@@ -66,16 +64,50 @@ class PinnedIPAdapter(requests.adapters.HTTPAdapter):
     def get_connection(self, url: str, proxies: Any = None) -> Any:
         parsed = urlparse(url)
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        pool_kwargs: dict[str, Any] = {}
+        if parsed.scheme == "https":
+            pool_kwargs["server_hostname"] = self.hostname
+            pool_kwargs["assert_hostname"] = self.hostname
+
         conn = self.poolmanager.connection_from_host(
             self.pinned_ip,
             port=port,
             scheme=parsed.scheme,
-            pool_kwargs={
-                "server_hostname": self.hostname,
-                "assert_hostname": self.hostname,
-            },
+            pool_kwargs=pool_kwargs,
         )
-        conn.assert_hostname = self.hostname
+        if parsed.scheme == "https":
+            conn.assert_hostname = self.hostname
+        return conn
+
+    def get_connection_with_tls_context(
+        self,
+        request: Any,
+        verify: Any,
+        proxies: Any = None,
+        cert: Any = None,
+    ) -> Any:
+        """
+        requests 2.32+ uses this hook instead of get_connection.
+        Keep the TCP peer pinned to the pre-validated IP while TLS still
+        verifies the original hostname.
+        """
+        parsed = urlparse(getattr(request, "url", "") or "")
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        try:
+            _, pool_kwargs = self.build_connection_pool_key_attributes(request, verify, cert)
+        except Exception:
+            pool_kwargs = {}
+        if parsed.scheme == "https":
+            pool_kwargs["server_hostname"] = self.hostname
+            pool_kwargs["assert_hostname"] = self.hostname
+        conn = self.poolmanager.connection_from_host(
+            self.pinned_ip,
+            port=port,
+            scheme=parsed.scheme or "https",
+            pool_kwargs=pool_kwargs,
+        )
+        if parsed.scheme == "https":
+            conn.assert_hostname = self.hostname
         return conn
 
 
@@ -206,6 +238,9 @@ def safe_fetch(
             adapter = PinnedIPAdapter(hostname=hostname, pinned_ip=pinned_ip)
             session.mount("https://", adapter)
             session.mount("http://", adapter)
+
+            if not any(key.lower() == "host" for key in req_headers):
+                req_headers["Host"] = hostname
 
             response = session.request(
                 method=method,

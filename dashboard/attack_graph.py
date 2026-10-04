@@ -22,15 +22,18 @@ def render_attack_surface_graph_html(
     nodes = []
     links = []
 
+    def _safe(text: Any) -> str:
+        return html.escape(str(text or ""), quote=True)
+
     # 1. Central Target Node
     nodes.append({
         "id": "target_root",
-        "name": target,
+        "name": _safe(target),
         "type": "target",
         "color": "#38bdf8",
         "radius": 28,
         "icon": "🎯",
-        "desc": f"Primary Target Workspace: {target}",
+        "desc": _safe(f"Primary Target Workspace: {target}"),
     })
 
     # 2. DNS IP Nodes
@@ -38,12 +41,12 @@ def render_attack_surface_graph_html(
         node_id = f"ip_{idx}"
         nodes.append({
             "id": node_id,
-            "name": ip,
+            "name": _safe(ip),
             "type": "ip",
             "color": "#3b82f6",
             "radius": 18,
             "icon": "🌐",
-            "desc": f"Resolved IP Endpoint: {ip}",
+            "desc": _safe(f"Resolved IP Endpoint: {ip}"),
         })
         links.append({"source": "target_root", "target": node_id, "color": "rgba(59,130,246,0.4)"})
 
@@ -52,12 +55,12 @@ def render_attack_surface_graph_html(
         node_id = f"sub_{idx}"
         nodes.append({
             "id": node_id,
-            "name": sub[:22] + ("..." if len(sub) > 22 else ""),
+            "name": _safe(sub[:22] + ("..." if len(sub) > 22 else "")),
             "type": "subdomain",
             "color": "#a855f7",
             "radius": 16,
             "icon": "📜",
-            "desc": f"CT Log Subdomain: {sub}",
+            "desc": _safe(f"CT Log Subdomain: {sub}"),
         })
         links.append({"source": "target_root", "target": node_id, "color": "rgba(168,85,247,0.35)"})
 
@@ -68,12 +71,12 @@ def render_attack_surface_graph_html(
         node_id = f"port_{idx}"
         nodes.append({
             "id": node_id,
-            "name": f":{port_num} ({service})",
+            "name": _safe(f":{port_num} ({service})"),
             "type": "port",
             "color": "#f59e0b",
             "radius": 16,
             "icon": "🔌",
-            "desc": f"Open Port {port_num} ({service})",
+            "desc": _safe(f"Open Port {port_num} ({service})"),
         })
         links.append({"source": "target_root", "target": node_id, "color": "rgba(245,158,11,0.4)"})
 
@@ -85,12 +88,12 @@ def render_attack_surface_graph_html(
         title = str(f.get("title", f"Finding #{idx+1}"))
         nodes.append({
             "id": node_id,
-            "name": f"[{sev[:4].upper()}] " + (title[:18] + ("..." if len(title) > 18 else "")),
+            "name": _safe(f"[{sev[:4].upper()}] " + (title[:18] + ("..." if len(title) > 18 else ""))),
             "type": "finding",
             "color": color,
             "radius": 20 if sev in ["Critical", "High"] else 15,
             "icon": "🚨" if sev in ["Critical", "High"] else "⚠️",
-            "desc": f"{title} ({sev}) — {f.get('exploitability', '')}",
+            "desc": _safe(f"{title} ({sev}) — {f.get('exploitability', '')}"),
         })
         # Link finding to target or port
         links.append({"source": "target_root", "target": node_id, "color": f"{color}55"})

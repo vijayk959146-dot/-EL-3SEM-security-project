@@ -1,0 +1,37 @@
+{
+  "target": "neverssl.com",
+  "summary": "The target lacks essential DNS records to prevent email spoofing and enforce email authentication policies, which could lead to phishing attacks. No open ports were found, but DNS-level security is crucial for overall protection.",
+  "top_risks": [
+    "Missing SPF record",
+    "Missing DMARC record",
+    "Phishing vulnerability"
+  ],
+  "findings": [
+    {
+      "rank": 1,
+      "title": "Missing SPF DNS Record",
+      "severity": "High",
+      "exploitability": "High risk of email spoofing",
+      "why_it_matters": "An SPF record helps prevent attackers from sending emails that appear to come from your domain, reducing the risk of phishing attacks.",
+      "suggested_action": "Add an SPF record to your DNS configuration. Example:\n\n`v=spf1 a mx ip4:YOUR_IP_RANGE include:spf.protection.outlook.com -all`",
+      "related_cves": [],
+      "source": "DNS Email Security"
+    },
+    {
+      "rank": 2,
+      "title": "Missing DMARC DNS Record",
+      "severity": "High",
+      "exploitability": "High risk of phishing and email fraud",
+      "why_it_matters": "A DMARC record helps enforce email authentication policies and provides reports on email authentication failures, reducing the risk of phishing and email fraud.",
+      "suggested_action": "Add a DMARC record to your DNS configuration. Example:\n\n`_dmarc TXT \"v=DMARC1; p=quarantine; sp=quarantine; rua=mailto:[email@example.com]; ruf=mailto:[email@example.com]; adkim=s; aspf=s;\"\"\"",
+      "related_cves": [],
+      "source": "DNS Email Security"
+    }
+  ],
+  "model_id": "amazon.nova-micro-v1:0",
+  "used_llm": true,
+  "mode": "passive",
+  "notes": [
+    "AI JSON validation: Valid on 1st attempt"
+  ]
+}

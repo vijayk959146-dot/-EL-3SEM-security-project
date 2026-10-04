@@ -1,0 +1,47 @@
+{
+  "target": "nexsafety.onrender.com",
+  "summary": "The target is exposed to several security risks due to missing security configurations and potential email security vulnerabilities. Immediate actions are required to mitigate these risks.",
+  "top_risks": [
+    "Missing security headers",
+    "Lack of email security DNS records",
+    "Potentially disclosed server information"
+  ],
+  "findings": [
+    {
+      "rank": 1,
+      "title": "Missing Security Headers",
+      "severity": "High",
+      "exploitability": "Critical information disclosure and potential XSS attacks",
+      "why_it_matters": "Security headers like CSP, HSTS, and X-Frame-Options help protect against XSS, man-in-the-middle attacks, and clickjacking. Missing these headers can leave the site vulnerable to various attacks.",
+      "suggested_action": "Add the following headers to your web server configuration to mitigate these risks:\n\n**For Nginx:**\n```nginx\nadd_header Strict-Transport-Security \"max-age=31536000; includeSubDomains; preload\";\nadd_header X-Content-Type-Options \"nosniff\";\nadd_header X-Frame-Options \"DENY\";\nadd_header X-XSS-Protection \"1; mode(block)\";\nadd_header Content-Security-Policy \"default-src 'self';\";\n```\n\n**For Apache:**\n```apache\nHeader always set Strict-Transport-Security \"max-age=31536000; includeSubDomains; preload\"\nHeader always set X-Content-Type-Options nosniff\nHeader always set X-Frame-Options DENY\nHeader always set X-XSS-Protection \"1; mode(block)\"\nHeader always set Content-Security-Policy \"default-src'self';\"\n```\n",
+      "related_cves": [],
+      "source": "HTTP response headers"
+    },
+    {
+      "rank": 2,
+      "title": "Missing SPF and DMARC DNS Records",
+      "severity": "Medium",
+      "exploitability": "Potential for email spoofing and phishing attacks",
+      "why_it_matters": "SPF and DMARC DNS records help protect against email spoofing and phishing by verifying the legitimacy of emails sent from your domain. Missing these records can make your domain vulnerable to spoofing attacks.",
+      "suggested_action": "Add the following DNS records to your domain's DNS configuration:\n\n**SPF Record:**\n```plain\nType: TXT\nName: @\nValue: v=spf1 include:_spf.example.com ~all\n```\n\n**DMARC Record:**\n```plain\nType: TXT\nName: _dmarc.\nValue: v=DMARC1; p=quarantine; sp=quarantine; rua=mailto:[email@example.com]; ruf=mailto:[email@example.com]; adkim=s; aspf=s; pct=100\n```\n",
+      "related_cves": [],
+      "source": "DNS configuration"
+    },
+    {
+      "rank": 3,
+      "title": "Server Header Disclosure",
+      "severity": "Low",
+      "exploitability": "Information disclosure",
+      "why_it_matters": "Disclosing server information can help attackers identify potential vulnerabilities specific to the server software in use. It's best practice to hide such information to reduce the attack surface.",
+      "suggested_action": "Modify your web server configuration to remove the server header.\n\n**For Nginx:**\n```nginx\nserver_tokens off;\n```\n\n**For Apache:**\n```apache\nServerTokens Minimal\nServerSignature Off\n```\n",
+      "related_cves": [],
+      "source": "HTTP response headers"
+    }
+  ],
+  "model_id": "amazon.nova-micro-v1:0",
+  "used_llm": true,
+  "mode": "passive",
+  "notes": [
+    "AI JSON validation: Valid on 1st attempt"
+  ]
+}

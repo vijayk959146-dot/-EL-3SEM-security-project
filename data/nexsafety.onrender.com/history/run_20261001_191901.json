@@ -1,0 +1,37 @@
+{
+  "target": "nexsafety.onrender.com",
+  "summary": "The target lacks essential DNS records to prevent email spoofing and enforce email authentication, which could allow attackers to spoof emails from the domain. No open ports were found, so no active scanning was performed.",
+  "top_risks": [
+    "Missing SPF record",
+    "Missing DMARC record",
+    "Potential for email spoofing"
+  ],
+  "findings": [
+    {
+      "rank": 1,
+      "title": "Missing SPF DNS Record",
+      "severity": "High",
+      "exploitability": "Potential for email spoofing",
+      "why_it_matters": "An SPF record helps prevent email spoofing by specifying which mail servers are permitted to send emails on behalf of your domain. Without it, attackers can send emails that appear to come from your domain.",
+      "suggested_action": "Add an SPF record to your DNS configuration. Example:\n\n`v=spf1 a mx ~all`",
+      "related_cves": [],
+      "source": "DNS Email Security"
+    },
+    {
+      "rank": 2,
+      "title": "Missing DMARC DNS Record",
+      "severity": "High",
+      "exploitability": "Potential for email spoofing",
+      "why_it_matters": "A DMARC record helps enforce email authentication policies by specifying how to handle emails that fail SPF or DKIM checks. Without it, attackers can send emails that appear to come from your domain without any policy enforcement.",
+      "suggested_action": "Add a DMARC record to your DNS configuration. Example:\n\n`v=DMARC1; p=quarantine; rua=mailto@example.com`",
+      "related_cves": [],
+      "source": "DNS Email Security"
+    }
+  ],
+  "model_id": "amazon.nova-micro-v1:0",
+  "used_llm": true,
+  "mode": "passive",
+  "notes": [
+    "AI JSON validation: Valid on 1st attempt"
+  ]
+}
