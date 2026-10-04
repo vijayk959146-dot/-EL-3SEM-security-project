@@ -413,6 +413,7 @@ with st.sidebar.expander("🚀 Run New Scan / Assessment", expanded=False):
                     )
                     scan_result = run_scan(scan_request)
                     st.session_state["active_target"] = scan_result.target
+                    st.session_state["target_workspace_select"] = scan_result.target
                     st.success(
                         f"Assessment completed for {scan_result.target} "
                         f"({scan_result.mode}, {scan_result.finding_count} finding(s))."
@@ -575,6 +576,7 @@ if not report or not report.get("findings"):
             with st.spinner("Executing defensive pipeline for localhost..."):
                 scan_result = run_scan(build_scan_request("localhost", DEFAULT_PORTS, force_passive=False))
                 st.session_state["active_target"] = scan_result.target
+                st.session_state["target_workspace_select"] = scan_result.target
                 st.success("Localhost scan complete!")
                 _time.sleep(1)
                 st.rerun()
@@ -583,6 +585,7 @@ if not report or not report.get("findings"):
             with st.spinner("Gathering passive intelligence for example.com..."):
                 scan_result = run_scan(build_scan_request("example.com", DEFAULT_PORTS, force_passive=True))
                 st.session_state["active_target"] = scan_result.target
+                st.session_state["target_workspace_select"] = scan_result.target
                 st.success("Passive OSINT scan complete!")
                 _time.sleep(1)
                 st.rerun()
