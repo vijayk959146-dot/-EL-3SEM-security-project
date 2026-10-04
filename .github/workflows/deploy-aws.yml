@@ -23,7 +23,7 @@ jobs:
 
       - name: Generate Deployment Zip Package
         run: |
-          zip -r deploy.zip Dockerfile Procfile Dockerrun.aws.json requirements.txt config.py schemas.py storage.py run_pipeline.py verify_access.py targets.allowlist USER_GUIDE.md README.md .streamlit ai correlation dashboard data discovery remediation tests verification
+          zip -r deploy.zip Dockerfile Procfile Dockerrun.aws.json requirements.txt config.py schemas.py storage.py run_pipeline.py verify_access.py targets.allowlist USER_GUIDE.md README.md .streamlit .platform ai backend correlation dashboard data discovery remediation tests verification
 
       - name: Deploy to Elastic Beanstalk
         uses: einaregilsson/beanstalk-deploy@v22
