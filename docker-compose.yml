@@ -1,0 +1,92 @@
+version: "3.8"
+
+services:
+  # ===========================================================================
+  # 1. Strands Decider 2B Service
+  # ===========================================================================
+  decider:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.decider
+    container_name: strands_decider
+    restart: unless-stopped
+    # Port 8099 is EXPOSED ONLY to the internal Docker Compose bridge network.
+    # It is NEVER published to the host machine or external internet.
+    expose:
+      - "8099"
+    environment:
+      - HF_HUB_ENABLE_HF_TRANSFER=0
+    volumes:
+      # Hugging Face cache persisted to avoid re-downloading model weights on restart
+      - hf_cache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8099/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 300s
+
+  # ===========================================================================
+  # 2. Application Service (Streamlit Dashboard + Strands Agent)
+  # ===========================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: attack_surface_app
+    restart: unless-stopped
+    depends_on:
+      decider:
+        condition: service_healthy
+    ports:
+      # Bound to localhost only. External public access goes through reverse proxy on 443/80
+      - "127.0.0.1:8501:8501"
+    expose:
+      - "8501"
+    environment:
+      # Connected directly to the decider container over internal compose DNS
+      - DECIDER_URL=http://decider:8099
+      - DECIDER_THRESHOLD=${DECIDER_THRESHOLD:-0.7}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID:-amazon.nova-micro-v1:0}
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD}
+      - ALLOW_ANONYMOUS_DASHBOARD=${ALLOW_ANONYMOUS_DASHBOARD:-false}
+      - NVD_API_KEY=${NVD_API_KEY:-}
+      - DEFAULT_TARGET=${DEFAULT_TARGET:-localhost}
+      - DEFAULT_PORTS=${DEFAULT_PORTS:-80,443,3000,8000,8080}
+    volumes:
+      # Scan results, verified target records, and historical diffs persisted across deploys
+      - app_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8501/_stcore/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ===========================================================================
+  # 3. Optional Caddy Reverse Proxy (Automatic HTTPS & Security Headers)
+  # ===========================================================================
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy_proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN_NAME=${DOMAIN_NAME:-:80}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  hf_cache:
+    name: strands_decider_hf_cache
+  app_data:
+    name: attack_surface_app_data
+  caddy_data:
+  caddy_config:

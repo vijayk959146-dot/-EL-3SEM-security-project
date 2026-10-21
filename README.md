@@ -1,0 +1,308 @@
+# Grounded Security Agent
+
+> A Strands agent on Amazon Bedrock whose tool calls are checked by **Strands Decider 2B** before they run.
+
+Built for the AWS **Agent Experience Hackathon: Strands Decider**.
+
+---
+
+## 1. Architecture & Two-Layer Guardrail Design
+
+When autonomous agents are equipped with active networking or scanning tools, they can hallucinate targets, assume unauthorized ports, or follow prompt injections embedded in web headers and scan outputs.
+
+To guarantee safety, every tool call passes through a **Two-Layer Guardrail Defense** before execution:
+
+```mermaid
+flowchart TD
+    A[Agent Proposes Tool Call] --> B{Layer 1: Deterministic Hard Gate}
+    B -- Target NOT in Allowlist --> C[DENY: Policy Blocked]
+    B -- Allowed / Verified --> D[Layer 2: Strands Decider 2B]
+    D --> E{Is Tool Call Grounded in User Request?}
+    E -- No (Confidence >= Threshold) --> F[GUIDE: Steer Agent to Clarify]
+    E -- Yes --> G[PROCEED: Execute Tool]
+    D -- Server Error / Timeout --> H[DENY: Fail-Closed]
+```
+
+1. **Layer 1: Deterministic Hard Gate (Allowlist Check - First & Non-Bypassable)**
+   - Before invoking any AI model, the target is checked against `targets.allowlist` and domain ownership verification records (`verification/verify.py`).
+   - If unauthorized, the tool call is immediately blocked with `Deny(reason=...)`. Strands Decider is not even queried.
+2. **Layer 2: Strands Decider 2B Semantic Grounding Gate**
+   - If allowlisted, Strands Decider 2B evaluates whether the target, action, and ports are grounded in the user's actual prompt using its high-speed pointer-head classifier (`POST /v1/systemone` binary `noul` question).
+   - If ungrounded with confidence >= `DECIDER_THRESHOLD` (default: 0.70), the guardrail issues a `Guide(reason=...)` to steer the agent back to clarify with the user.
+3. **Fail-Closed by Design:**
+   - If the Strands Decider server is unreachable, times out, or throws an error, the guardrail defaults to `Deny` (`on_error="deny"`).
+
+---
+
+## 2. Reusable Decision Patterns
+
+This repository implements two production decision patterns:
+
+* **Primary Declared Pattern: `#guardrails` (Grounded Tool Call Guardrail)**
+  - Intercepts sensitive agent actions using the Strands Agents SDK `InterventionHandler`.
+  - Detailed pattern documentation: [decision_patterns/grounded_tool_call/README.md](decision_patterns/grounded_tool_call/README.md).
+* **Secondary Decision: `#routing` (Cost-Optimized Model Routing)**
+  - Routes vulnerability findings between Static Hardening Templates ($0.00 / instant), Amazon Nova Micro (`amazon.nova-micro-v1:0`), and Amazon Nova Pro (`amazon.nova-pro-v1:0`) / Claude Sonnet 4.5.
+  - Detailed pattern documentation: [decision_patterns/model_routing/README.md](decision_patterns/model_routing/README.md).
+
+---
+
+## 3. Quick Start
+
+### Step 1: Install Dependencies
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate | Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
+copy .env.example .env   # On Windows (or cp on Linux/macOS)
+```
+
+### Step 2: Start the Strands Decider 2B Server
+```bash
+strands-decider serve StrandsAgents/strands-decider-2B-qwen3.5-v1-2610 --port 8099 --device cpu
+```
+
+### Step 3: Run the Security Agent
+```python
+from agent.core import create_security_agent
+
+agent = create_security_agent()
+response = agent("Run a passive scan on example.com and explain any missing security headers.")
+print(response)
+```
+
+### Step 4: Run the Interactive Dashboard
+```bash
+streamlit run dashboard/app.py
+```
+
+### Step 5: Production Deployment Guide
+For complete single-instance EC2 deployment using Docker Compose and Terraform:
+See [DEPLOY.md](DEPLOY.md).
+
+---
+
+## 4. Scanning Engine
+
+## 🛡️ Dual Operational Modes & Safety Guardrails
+
+The tool supports checking real-world domains and local labs exclusively through two safe, ethical operational modes:
+
+| Mode | Target Eligibility | Scope & Capabilities | Probing / Scanning Behavior |
+| :--- | :--- | :--- | :--- |
+| **1. Passive OSINT Mode** *(Default)* | Any public internet domain (e.g. `example.com`) | Safe HTTP root headers (`GET /`), public TLS cert inspection, DNS records (A, AAAA, MX, TXT, SPF, DMARC), Certificate Transparency log enumeration (`crt.sh`), optional Shodan InternetDB cache. | **Zero Port Probing**: Strictly passive. Never runs Nmap, never connects to arbitrary ports, never probes paths. |
+| **2. Verified Active Mode** | Localhost / allowlist lab targets (`targets.allowlist`) **OR** domains verified via ownership challenge | Full active pipeline: Nmap service version detection (`-sV`), local TLS socket inspection, port-level CVE correlation. | **Authorized Port Probing**: Allowed only against targets the user explicitly owns or controls. |
+
+---
+
+## 🔑 Domain Ownership Verification (`verification/`)
+
+To authorize active port scanning against a public domain, you must prove administrative control over the domain.
+
+```
+┌────────────────────────────────────────────────────────┐
+│             Domain Ownership Challenge Flow            │
+└────────────────────────────────────────────────────────┘
+  1. Generate Challenge Token:
+     $ python -m verification start mydomain.com
+     ├── Token: e82f9d...a7
+     ├── Option A: Add DNS TXT record:
+     │             _attacksurface-verify.mydomain.com -> e82f9d...a7
+     └── Option B: Host file at:
+                   https://mydomain.com/.well-known/attacksurface-verify.txt
+
+  2. Verify Ownership:
+     $ python -m verification check mydomain.com
+     └── [SUCCESS] Domain verified for 30 days! (Expires in 30 days)
+```
+
+### CLI Commands:
+- **Start Verification**:
+  ```bash
+  python -m verification start example.com
+  ```
+- **Check Verification**:
+  ```bash
+  python -m verification check example.com
+  ```
+- Verification state is stored securely in `data/verified_targets.json` with a **30-day time-to-live (TTL)**. Expired entries automatically fail closed and revert to Passive OSINT mode.
+
+---
+
+## 🔒 SSRF & Abuse Defenses (`discovery/safe_fetch.py`)
+
+When interacting with external web endpoints, the tool enforces strict Server-Side Request Forgery (SSRF) and network abuse safeguards:
+- **Scheme & Port Restriction**: Only `http://` and `https://` on ports 80 and 443 are allowed for external lookups.
+- **Private & Cloud Metadata Blocklist**: Every hostname resolution is checked via `ipaddress`. Any resolution to private (RFC 1918 `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), loopback (`127.0.0.0/8`, `::1`), link-local (`169.254.0.0/16`, `fe80::/10`), multicast, or cloud instance metadata endpoints (`169.254.169.254`, `fd00:ec2::254`) is immediately aborted.
+- **DNS Rebinding Defense**: Connects directly to pre-validated IP addresses or re-validates DNS resolution prior to HTTP dispatch.
+- **Manual Redirect Re-validation**: HTTP redirects are followed manually (capped at 3 hops), with full SSRF and IP validation re-executed on every intermediate hop.
+- **Response & Rate Limiting**: Capped at 1 MB response payload and 6.0-second network timeouts per request with per-domain rate limiting.
+
+---
+
+## 📖 Security & Threat Intelligence Concepts (For 3rd Semester Students)
+
+| Concept | Explanation |
+| :--- | :--- |
+| **SSRF (Server-Side Request Forgery)** | A vulnerability where an attacker tricks a backend server into requesting internal, non-public systems (e.g. AWS metadata). |
+| **DNS Rebinding** | An attack that exploits DNS TTL changes to make a public domain resolve to an internal IP like `127.0.0.1`. |
+| **Certificate Transparency (CT)** | Public append-only logs recording all issued TLS certificates, allowing discovery of associated subdomains. |
+| **SPF & DMARC** | DNS TXT records specifying which mail servers are authorized to send email for a domain, preventing email spoofing. |
+| **CPE (Common Platform Enumeration)** | A structured naming scheme (e.g. `cpe:2.3:a:apache:http_server:2.4.49`) used to query NVD for exact version matches. |
+| **CVSS (Common Vulnerability Scoring System)** | A 0.0 to 10.0 score reflecting theoretical flaw severity. |
+| **CISA KEV (Known Exploited Vulnerabilities)** | A public catalog of vulnerabilities actively weaponized by real-world threat actors in the wild. |
+| **EPSS (Exploit Prediction Scoring System)** | A machine-learning probability score (0.0 to 1.0 / 0% to 100%) predicting real-world exploitation in the next 30 days. |
+| **SameSite Cookie Attribute** | Flag (`Strict`, `Lax`, `None`) that tells the browser whether to send cookies on cross-origin requests, preventing CSRF attacks. |
+| **CORS (Cross-Origin Resource Sharing)** | Header policy controlling domain API access. A wildcard `Access-Control-Allow-Origin: *` allows any website to read sensitive API data. |
+
+---
+
+## 🏗️ Architecture Pipeline
+
+```
+          Target Host / Public Domain
+                      │
+        ┌─────────────┴─────────────┐
+        ▼                           ▼
+[Unverified / Public]      [Allowlisted / Verified]
+ 100% Passive OSINT         Authorized Active Scan
+ ├── Safe GET / (Headers)   ├── Nmap / TCP Port Probe
+ ├── TLS Cert Parsing       ├── Service Banner -sV
+ ├── DNS (SPF/DMARC/MX)     └── Local TLS Socket Audit
+ └── CT Logs (crt.sh)
+        │                           │
+        └─────────────┬─────────────┘
+                      ▼
+        [2] Correlation & Threat Intelligence
+            ├── NVD CVE Matching (CPE & keyword)
+            ├── CISA KEV Exploited Catalog lookup
+            └── FIRST EPSS Exploit Probability
+                      │
+                      ▼
+        [3] AI Defensive Prioritization
+            ├── Amazon Bedrock Converse API (Amazon Nova / Anthropic Claude)
+            ├── Strict Prompt Injection Sanitization (<target_data> boundary)
+            ├── Mode-aware prompting (never implies active testing on unverified)
+            └── Deterministic KEV > EPSS > CVSS fallback
+                      │
+                      ▼
+        [4] Dashboard & Evaluation Suite
+            ├── Backend Service Layer (`backend/service.py`)
+            ├── Streamlit Interactive UI with Domain Verification Panel
+            ├── Scan History & Diff Analysis (New / Resolved / Unchanged)
+            └── CSV & HTML Report Downloads
+```
+
+---
+
+## 🧩 Backend Service Layer
+
+The project now routes CLI and dashboard scan launches through
+`backend/service.py`, a UI-independent backend boundary that handles:
+
+- Scan request validation and target normalization.
+- TCP port parsing, de-duplication, range checks, and scan-size limits.
+- Active-vs-passive mode selection based on allowlist or verification state.
+- Discovery, correlation, prioritization, report persistence, and history writes.
+- A structured `ScanResult` contract for current UI code and future API layers.
+
+This makes the dashboard thinner and keeps backend behavior consistent whether a
+scan starts from Streamlit, the CLI, or a future FastAPI/worker deployment.
+
+---
+
+## 🚀 Setup & Execution
+
+### 1. Installation
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate | Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
+copy .env.example .env   # On Windows (or cp on Linux/macOS)
+```
+
+Configure `.env` with your AWS credentials:
+```ini
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+AWS_REGION=us-east-1
+BEDROCK_MODEL_ID=amazon.nova-micro-v1:0
+DASHBOARD_PASSWORD=replace_with_a_long_random_password
+ALLOW_ANONYMOUS_DASHBOARD=false  # Set true only for private local demos with no sensitive reports
+```
+
+For Elastic Beanstalk, set `DASHBOARD_PASSWORD` and keep
+`ALLOW_ANONYMOUS_DASHBOARD=false` under the environment properties. The
+dashboard fails closed when no password is configured. Anonymous access should
+only be enabled for a private local demonstration.
+
+### 2. Running Scans
+
+- **Passive OSINT Scan (Any public domain)**:
+  ```bash
+  python run_pipeline.py --target example.com
+  ```
+- **Localhost Lab Scan (Active probing authorized)**:
+  ```bash
+  python run_pipeline.py --target localhost --ports 80,443,3000,8000,8080
+  ```
+- **Force Passive Mode on Verified Domain**:
+  ```bash
+  python run_pipeline.py --target verified-site.com --passive-only
+  ```
+
+---
+
+## 📊 Evaluation & Testing
+
+```bash
+# Run full unit test suite (SSRF, Verification, Diffs, AI Sanitization)
+python -m unittest discover -s tests -v
+
+# Run OWASP Juice Shop benchmark evaluation
+python tests/validate.py
+
+# Run ranking methodology comparison (CVSS vs KEV/EPSS vs Bedrock AI)
+python tests/compare_rankings.py
+```
+
+---
+
+## 🖥️ Streamlit Dashboard
+
+For a plain-language explanation of scan modes, checks, reports, and safe testing, see [USER_GUIDE.md](USER_GUIDE.md).
+
+Launch the web UI:
+```bash
+# On Windows (PowerShell / CMD):
+py -m streamlit run dashboard/app.py
+
+# Or with python:
+python -m streamlit run dashboard/app.py
+```
+
+Includes:
+- **Dynamic Mode Badges**: `Local Lab`, `Passive OSINT`, and `Verified Active`.
+- **Domain Verification Panel**: Interactive DNS TXT / `.well-known` token generation and validation.
+- **Passive OSINT Inspector**: Explore public DNS records, TLS certificates, and Certificate Transparency subdomains.
+- **Scan History Diffs**: Track vulnerability remediation over time.
+- **Report Exports**: Download findings in CSV and HTML formats.
+
+---
+
+## ⚠️ Honest Limitations & Scope
+
+1. **Domain Control vs Server Ownership**: Ownership verification proves control over a hostname's DNS zone or web document root. It does **not** prove ownership of the shared physical server, cloud hypervisor, or IP address space hosting it.
+2. **Passive Mode Scope**: Passive scans strictly see what an ordinary visitor's web browser sees (`GET /`, TLS certificate, and public DNS records). It does not reveal internal endpoints, closed ports, or non-HTTP services.
+3. **Certificate Transparency Subdomains**: Subdomains extracted from public Certificate Transparency logs (`crt.sh`) are indexed for organizational awareness only and are **never scanned automatically**. Each subdomain requires separate verification before active probing.
+4. **No Exploitation**: The tool does not perform fuzzing, SQL injection, XSS exploitation, brute forcing, or directory brute-forcing.
+
+---
+
+## ⚖️ Ethics and Responsible Use
+
+This tool was designed under ethical AI and defensive security research principles:
+- **Authorization by Default**: Active port scanning is prohibited against unauthorized targets.
+- **Safe Intelligence Gathering**: Public domain lookups utilize rate-limited, non-intrusive queries.
+- **AI Safety & Defense-Only Remediation**: The AI model is instructed to provide only defensive hardening advice (e.g. Nginx configurations, Content-Security-Policy headers) and will never suggest exploitation steps or unauthorized testing.
+

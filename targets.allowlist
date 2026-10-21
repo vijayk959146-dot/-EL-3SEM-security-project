@@ -1,0 +1,5 @@
+# Only these hosts may be scanned. One hostname or IP per line.
+# Never add third-party domains you do not own.
+localhost
+127.0.0.1
+::1
