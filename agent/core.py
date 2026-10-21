@@ -48,20 +48,25 @@ def create_security_agent(
     Args:
         model: Custom model instance (defaults to BedrockModel with BEDROCK_MODEL_ID).
         interventions: Optional list of Strands InterventionHandler instances.
+                       Defaults to [GroundedToolCallIntervention()].
         system_prompt: System prompt instructing the agent on security boundaries.
 
     Returns:
         Configured strands.Agent instance.
     """
     from strands import Agent
+    from decision_patterns.grounded_tool_call import GroundedToolCallIntervention
 
     agent_model = model or get_bedrock_model()
     agent_tools = [passive_scan, active_scan, correlate, explain]
 
+    if interventions is None:
+        interventions = [GroundedToolCallIntervention()]
+
     return Agent(
         model=agent_model,
         tools=agent_tools,
-        interventions=interventions or [],
+        interventions=interventions,
         system_prompt=system_prompt,
     )
 
