@@ -18,7 +18,12 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from decision_patterns.model_routing.router import FindingRouter
+from decision_patterns.model_routing.router import (
+    BEDROCK_PRICING,
+    MODEL_TIER_LARGE,
+    MODEL_TIER_SMALL,
+    FindingRouter,
+)
 
 SAMPLE_FINDINGS: list[dict[str, Any]] = [
     {
@@ -155,8 +160,8 @@ def run_benchmark() -> dict[str, Any]:
         "# Model Routing Benchmark Results: Strands Decider 2B vs Always Large Model",
         "",
         "**Benchmark Goal:** Compare latency, token consumption, and official Amazon Bedrock execution costs between:",
-        "1. **Baseline Strategy (`Always Large`):** Every finding is analyzed using Claude 3.5 Sonnet.",
-        "2. **Strands Decider-Routed Strategy:** Strands Decider 2B categorizes findings into `template` ($0.00 / 0ms), `small` (Amazon Nova Micro), or `large` (Claude 3.5 Sonnet).",
+        f"1. **Baseline Strategy (`Always Large`):** Every finding is analyzed using the large model tier (`{MODEL_TIER_LARGE}`).",
+        f"2. **Strands Decider-Routed Strategy:** Strands Decider 2B categorizes findings into `template` ($0.00 / instant), `small` (`{MODEL_TIER_SMALL}`), or `large` (`{MODEL_TIER_LARGE}`).",
         "",
         "## Summary Metrics",
         "",
@@ -179,13 +184,18 @@ def run_benchmark() -> dict[str, Any]:
             f"| {f['title']} | {f['severity']} | `{r.tier}` | {b.latency_ms:.0f}ms / ${b.cost_usd:.5f} | {r.latency_ms:.0f}ms / ${r.cost_usd:.5f} | {cost_flag} |"
         )
 
+    large_in_rate = BEDROCK_PRICING.get(MODEL_TIER_LARGE, {}).get("input_per_million", 0.80)
+    large_out_rate = BEDROCK_PRICING.get(MODEL_TIER_LARGE, {}).get("output_per_million", 3.20)
+    small_in_rate = BEDROCK_PRICING.get(MODEL_TIER_SMALL, {}).get("input_per_million", 0.035)
+    small_out_rate = BEDROCK_PRICING.get(MODEL_TIER_SMALL, {}).get("output_per_million", 0.14)
+
     md_lines.extend([
         "",
         "## Official AWS Bedrock Pricing Baseline",
-        "- **Anthropic Claude 3.5 Sonnet:** $3.00 / 1M input tokens, $15.00 / 1M output tokens.",
-        "- **Amazon Nova Micro:** $0.035 / 1M input tokens, $0.14 / 1M output tokens.",
+        f"- **Large Tier Model (`{MODEL_TIER_LARGE}`):** ${large_in_rate:.3f} / 1M input, ${large_out_rate:.3f} / 1M output (Source: AWS Bedrock Pricing).",
+        f"- **Small Tier Model (`{MODEL_TIER_SMALL}`):** ${small_in_rate:.3f} / 1M input, ${small_out_rate:.3f} / 1M output (Source: AWS Bedrock Pricing).",
         "- **Template Remediation:** $0.00 / 0ms execution time.",
-        "- **Strands Decider 2B:** System One pointer-head classification (<15ms, zero autoregressive token overhead).",
+        "- **Strands Decider 2B:** System One pointer-head classification (measured on the deployed instance: TBD, zero autoregressive token overhead).",
     ])
 
     out_dir = ROOT / "data"

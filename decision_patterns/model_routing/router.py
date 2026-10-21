@@ -23,16 +23,17 @@ from decision_patterns.grounded_tool_call.client import DeciderClient
 logger = logging.getLogger(__name__)
 
 # Official Amazon Bedrock Pricing (USD per 1M tokens) - Configurable via environment
-# Source: AWS Bedrock Pricing page (as of 2025/2026 standard on-demand pricing)
+# Source: AWS Bedrock Official On-Demand Pricing (https://aws.amazon.com/bedrock/pricing/)
 BEDROCK_PRICING = {
-    # Anthropic Claude 3.5 Sonnet
-    "anthropic.claude-3-5-sonnet-20241022-v2:0": {
+    # Anthropic Claude Sonnet 4.5
+    "us.anthropic.claude-sonnet-4-5-20250929-v1:0": {
         "input_per_million": float(os.getenv("PRICING_LARGE_INPUT", "3.00")),
         "output_per_million": float(os.getenv("PRICING_LARGE_OUTPUT", "15.00")),
     },
-    "us.anthropic.claude-3-5-sonnet-20241022-v2:0": {
-        "input_per_million": float(os.getenv("PRICING_LARGE_INPUT", "3.00")),
-        "output_per_million": float(os.getenv("PRICING_LARGE_OUTPUT", "15.00")),
+    # Amazon Nova Pro
+    "amazon.nova-pro-v1:0": {
+        "input_per_million": float(os.getenv("PRICING_LARGE_INPUT", "0.80")),
+        "output_per_million": float(os.getenv("PRICING_LARGE_OUTPUT", "3.20")),
     },
     # Amazon Nova Micro
     "amazon.nova-micro-v1:0": {
@@ -46,7 +47,7 @@ BEDROCK_PRICING = {
     },
 }
 
-MODEL_TIER_LARGE = os.getenv("BEDROCK_LARGE_MODEL", "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+MODEL_TIER_LARGE = os.getenv("BEDROCK_LARGE_MODEL", "amazon.nova-pro-v1:0")
 MODEL_TIER_SMALL = os.getenv("BEDROCK_SMALL_MODEL", "amazon.nova-micro-v1:0")
 
 

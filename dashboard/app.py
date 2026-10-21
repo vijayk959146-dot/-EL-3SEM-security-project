@@ -1214,11 +1214,23 @@ with tab_copilot:
         key="copilot_user_input",
         height=90,
     )
+    MAX_BEDROCK_QUERIES_PER_SESSION = int(os.getenv("MAX_BEDROCK_QUERIES_PER_SESSION", "20"))
+    current_calls = st.session_state.get("bedrock_query_count", 0)
+    remaining_calls = max(0, MAX_BEDROCK_QUERIES_PER_SESSION - current_calls)
+
+    st.caption(f"🛡️ Demo Safety Guardrail: {remaining_calls}/{MAX_BEDROCK_QUERIES_PER_SESSION} Bedrock queries remaining in this session.")
+
     if st.button("🚀 Ask SOC Copilot", type="primary"):
         copilot_query = str(st.session_state.get("copilot_user_input") or "").strip()
         if not copilot_query:
             st.warning("Enter a question or choose a one-click prompt first.")
+        elif current_calls >= MAX_BEDROCK_QUERIES_PER_SESSION:
+            st.error(
+                f"🛑 Demo Rate Limit Reached: Maximum of {MAX_BEDROCK_QUERIES_PER_SESSION} Bedrock queries "
+                "allowed per session to prevent runaway API spend. Please refresh your session or log in as administrator."
+            )
         else:
+            st.session_state.bedrock_query_count = current_calls + 1
             with st.spinner("AI SOC Analyst reasoning with report telemetry..."):
                 st.session_state.copilot_answer = query_copilot(copilot_query, report)
 

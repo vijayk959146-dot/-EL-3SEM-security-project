@@ -73,9 +73,11 @@ resource "aws_iam_role_policy" "bedrock_access" {
         ]
         Resource = [
           "arn:aws:bedrock:*::foundation-model/amazon.nova-micro-v1:0",
-          "arn:aws:bedrock:*::foundation-model/amazon.nova-lite-v1:0",
-          "arn:aws:bedrock:*::foundation-model/anthropic.claude-*",
-          "arn:aws:bedrock:*::foundation-model/us.anthropic.claude-*"
+          "arn:aws:bedrock:*::foundation-model/amazon.nova-pro-v1:0",
+          "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+          "arn:aws:bedrock:*:*:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+          "arn:aws:bedrock:*:*:inference-profile/us.amazon.nova-micro-v1:0",
+          "arn:aws:bedrock:*:*:inference-profile/us.amazon.nova-pro-v1:0"
         ]
       }
     ]
@@ -94,9 +96,9 @@ resource "aws_security_group" "agent_sg" {
   name        = "strands-agent-sg"
   description = "Security group for Strands Decider agent & dashboard"
 
-  # Public HTTPS
+  # Public HTTPS (Terminated by Reverse Proxy / ALB)
   ingress {
-    description = "HTTPS access to Streamlit / Reverse Proxy"
+    description = "HTTPS access via Reverse Proxy"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
@@ -112,15 +114,6 @@ resource "aws_security_group" "agent_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Streamlit direct port (optional fallback for demo testing)
-  ingress {
-    description = "Streamlit direct port"
-    from_port   = 8501
-    to_port     = 8501
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   # SSH strictly restricted to administrator CIDR (never 0.0.0.0/0)
   ingress {
     description = "SSH admin access"
@@ -130,7 +123,8 @@ resource "aws_security_group" "agent_sg" {
     cidr_blocks = [var.admin_ip]
   }
 
-  # NOTE: Port 8099 (Decider server) is EXCLUDED. It is strictly closed to external traffic.
+  # NOTE: Port 8501 and Port 8099 are STRICTLY CLOSED externally.
+  # Traffic reaches Streamlit only via the reverse proxy (Caddy/ALB) on port 443/80.
 
   egress {
     description = "Outbound internet access for OSINT, NVD, and Bedrock API calls"
@@ -184,6 +178,6 @@ output "instance_public_ip" {
 }
 
 output "dashboard_url" {
-  value       = "http://${aws_instance.app_host.public_ip}:8501"
-  description = "Direct dashboard link"
+  value       = "http://${aws_instance.app_host.public_ip}"
+  description = "Dashboard link via reverse proxy (Port 80/443)"
 }

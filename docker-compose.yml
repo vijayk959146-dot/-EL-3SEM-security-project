@@ -21,10 +21,10 @@ services:
       - hf_cache:/root/.cache/huggingface
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8099/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 8
-      start_period: 30s
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 300s
 
   # ===========================================================================
   # 2. Application Service (Streamlit Dashboard + Strands Agent)
@@ -39,8 +39,10 @@ services:
       decider:
         condition: service_healthy
     ports:
-      # Direct access port (can be restricted to localhost if using Caddy/reverse proxy)
-      - "8501:8501"
+      # Bound to localhost only. External public access goes through reverse proxy on 443/80
+      - "127.0.0.1:8501:8501"
+    expose:
+      - "8501"
     environment:
       # Connected directly to the decider container over internal compose DNS
       - DECIDER_URL=http://decider:8099

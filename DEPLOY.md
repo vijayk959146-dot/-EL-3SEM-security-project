@@ -31,7 +31,7 @@ This guide covers deploying the AI Attack Surface tool, the Strands Agent, and t
                                                                 │ IAM Instance Profile
                                                                 ▼ (bedrock:InvokeModel)
                                                    [ Amazon Bedrock Foundation Models ]
-                                                   (Nova Micro & Claude 3.5 Sonnet)
+                                                   (Nova Micro & Claude Sonnet 4.5)
 ```
 
 ### Security & Cost Guarantees
@@ -45,39 +45,32 @@ This guide covers deploying the AI Attack Surface tool, the Strands Agent, and t
 
 ## 2. Infrastructure Sizing & Cost Estimates
 
-| Tier | EC2 Instance Type | vCPUs | RAM | Accelerator | Hourly Cost (On-Demand) | 24-Hour Demo Cost | Recommended Use |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **CPU (Recommended)** | **`t3.xlarge`** | 4 | 16 GB | None (CPU) | **$0.1664 / hr** | **~$4.00** | **Best for judges / demo testing** (~50ms decision latency) |
-| **Compute CPU** | **`c6i.xlarge`** | 4 | 8 GB | None (CPU) | **$0.1700 / hr** | **~$4.08** | Fast CPU vector execution |
-| **GPU Accelerated** | **`g4dn.xlarge`** | 4 | 16 GB | 1x NVIDIA T4 (16GB) | **$0.5260 / hr** | **~$12.60** | Sub-15ms decision latency |
+| Tier | EC2 Instance Type | vCPUs | RAM | Accelerator | Hourly Cost (On-Demand) [1] | 24-Hour Demo Cost | Decision Latency | Recommended Use |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **CPU (Recommended)** | **`t3.xlarge`** | 4 | 16 GB | None (CPU) | **$0.1664 / hr** | **~$4.00** | measured on the deployed instance: TBD | **Best for judges / demo testing** |
+| **Compute CPU** | **`c6i.xlarge`** | 4 | 8 GB | None (CPU) | **$0.1700 / hr** | **~$4.08** | measured on the deployed instance: TBD | Standard CPU option |
+| **GPU Option** | **`g4dn.xlarge`** | 4 | 16 GB | 1x NVIDIA T4 (16GB) | **$0.5260 / hr** | **~$12.60** | measured on the deployed instance: TBD | High throughput GPU |
 
-* **Storage Cost:** 40 GB gp3 EBS root volume = ~$3.20 / month (~$0.10 / day).
-* **Bedrock Cost:** Amazon Nova Micro is $0.035 / 1M input tokens. Running 50 full demo scans costs **less than $0.05 total**.
+*Sources:*
+- [1] AWS EC2 On-Demand Pricing for `us-east-1` (Source: https://aws.amazon.com/ec2/pricing/on-demand/).
+- [2] EBS gp3 root storage: $0.08 / GB-month (Source: AWS EBS Pricing). 40 GB = ~$3.20/month (~$0.10/day).
+- [3] Bedrock Foundation Models: Amazon Nova Micro input $0.035 / 1M tokens, output $0.14 / 1M tokens; Claude Sonnet 4.5 input $3.00 / 1M tokens, output $15.00 / 1M tokens (Source: https://aws.amazon.com/bedrock/pricing/).
 
 ---
 
 ## 3. Step-by-Step Deployment Walkthrough
 
-### Step A: Provision EC2 & IAM Role
+### Step A: Provision EC2 & IAM Role via Terraform
 
-You can deploy the infrastructure using either Terraform, CloudFormation, or the AWS Management Console:
+Deploy the infrastructure using Terraform (`deploy/terraform/main.tf`):
 
-#### Option 1: Using Terraform (Fastest)
 ```bash
 cd deploy/terraform
 terraform init
 terraform apply -var="admin_ip=$(curl -s http://checkip.amazonaws.com)/32"
 ```
 
-#### Option 2: Using AWS CloudFormation
-```bash
-aws cloudformation create-stack \
-  --stack-name strands-decider-agent-stack \
-  --template-body file://deploy/cloudformation.yaml \
-  --parameters ParameterKey=InstanceType,ParameterValue=t3.xlarge \
-               ParameterKey=AdminCIDR,ParameterValue="$(curl -s http://checkip.amazonaws.com)/32" \
-  --capabilities CAPABILITY_NAMED_IAM
-```
+*Note: Port 8501 is closed in the security group. Only ports 80/443 are public, and SSH is restricted to your admin IP.*
 
 ---
 
@@ -117,7 +110,7 @@ Once the containers are up, execute the included smoke test script to verify all
 docker compose exec app python deploy/smoke_test.py
 ```
 
-Expected output:
+Expected output format:
 ```text
 ================================================================================
   PRODUCTION SMOKE TEST: STRANDS DECIDER + AGENT DEPLOYMENT
@@ -129,10 +122,10 @@ Dashboard URL: http://127.0.0.1:8501
       [PASS] Decider is healthy! Model: strands-decider-2B-qwen3.5-v1-2610, Device: cpu
 
 [2/4] Testing Decider 2B Inference Decision Call...
-      [PASS] Decision successful! P(grounded) = 0.9412 in 52.3ms
+      [PASS] Decision successful! P(grounded) = 0.9412 (latency: measured on the deployed instance: TBD)
 
 [3/4] Testing Amazon Bedrock (amazon.nova-micro-v1:0 in us-east-1)...
-      [PASS] Bedrock Converse responded: 'READY' (12 tokens in 280.4ms)
+      [PASS] Bedrock Converse responded: 'READY' (latency: measured on the deployed instance: TBD)
 
 [4/4] Checking Dashboard Web Service & Login Page (http://127.0.0.1:8501)...
       [PASS] Dashboard responded with HTTP 200 OK! Shell rendered successfully.
@@ -144,15 +137,40 @@ Dashboard URL: http://127.0.0.1:8501
 
 ---
 
-## 5. Accessing the Dashboard (Judge Demo)
+## 5. Reverse Proxy & Domain Configuration Options
+
+### Option A: Direct IP Access (No Domain Configured - Default)
+* In `.env`, leave `DOMAIN_NAME=` blank.
+* Caddy automatically binds to **Port 80 (HTTP)** and reverse-proxies directly to Streamlit (`app:8501`).
+* Access URL: `http://<EC2_PUBLIC_IP>`
+
+### Option B: Custom Domain with Automatic Let's Encrypt HTTPS
+* Point an `A` record (e.g. `agent.example.com`) to the EC2 Public IP.
+* In `.env`, set:
+  ```bash
+  DOMAIN_NAME=agent.example.com
+  ```
+* Restart Caddy: `docker compose restart caddy`.
+* Caddy automatically negotiates and renews Let's Encrypt TLS certificates, listening on **Port 443 (HTTPS)** with automatic HTTP -> HTTPS redirection.
+* Access URL: `https://agent.example.com`
+
+### Option C: AWS Application Load Balancer (ALB) + ACM Certificate
+* If your organization manages certificates in AWS Certificate Manager (ACM):
+  1. Create an ALB with an HTTPS listener (port 443) using your ACM certificate.
+  2. Create a Target Group pointing to EC2 instance on Port 80 (HTTP).
+  3. The ALB terminates TLS and forwards clean HTTP traffic to Caddy/App.
+
+---
+
+## 6. Accessing the Dashboard (Judge Demo)
 
 1. Open your browser and navigate to:
    ```text
-   http://<EC2_PUBLIC_IP>:8501
+   http://<EC2_PUBLIC_IP>
    ```
-   *(Or `https://<YOUR_DOMAIN>` if you pointed DNS to the instance and set `DOMAIN_NAME` in `.env`)*.
+   *(Or `https://<YOUR_DOMAIN>` if configured)*.
 
-2. Enter the `DASHBOARD_PASSWORD` that was printed by `ec2_setup.sh` (or stored in `.env`).
+2. Enter the `DASHBOARD_PASSWORD` generated by `ec2_setup.sh` (or set in `.env`).
 
 3. Try entering:
    * **Grounded Scan:** Ask the agent in the Copilot tab to *"Run a passive scan on github.com"*. The Decider verifies grounding and executes immediately.
@@ -181,11 +199,6 @@ When the hackathon demo or judging is complete, terminate the resources immediat
 ```bash
 cd deploy/terraform
 terraform destroy -auto-approve
-```
-
-### If deployed via CloudFormation:
-```bash
-aws cloudformation delete-stack --stack-name strands-decider-agent-stack
 ```
 
 ### If deployed manually via AWS Console:

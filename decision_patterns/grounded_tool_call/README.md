@@ -13,7 +13,7 @@ Autonomous agents equipped with active networking or scanning tools can:
 2. **Follow Prompt Injections:** Attempt to scan external, sensitive, or attacker-controlled hosts embedded inside HTTP headers, SSL certificates, or scan banners.
 3. **Bypass Access Policies:** Exceed the scope of user authorization without human intervention.
 
-Standard LLMs either fail to catch these subtleties reliably or introduce high latency (1,000–3,000 ms) when acting as secondary validators.
+Standard LLMs either fail to catch these subtleties reliably or introduce high latency (measured on the deployed instance: TBD) when acting as secondary validators.
 
 ---
 
@@ -134,4 +134,4 @@ response = agent("Deploy to staging")
 ## 6. Security Guarantees & Invariants
 1. **Never Fails Open:** Network drops or Decider 2B cold starts fail closed (`Deny`).
 2. **Zero Code Duplication:** Wraps existing authorization and business logic cleanly.
-3. **Sub-15ms Overhead:** Bypasses autoregressive token generation loops via pointer-head readout.
+3. **Pointer-Head Fast Readout:** Bypasses autoregressive token generation loops via a direct classification readout (latency measured on deployed instance: TBD).
