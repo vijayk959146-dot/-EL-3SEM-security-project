@@ -10,14 +10,20 @@ terraform {
 
 variable "aws_region" {
   type        = string
-  default     = "us-east-1"
+  default     = "ap-southeast-2"
   description = "AWS Region for deployment"
+}
+
+variable "key_pair_name" {
+  type        = string
+  default     = "strands-agent-key"
+  description = "Name of the EC2 Key Pair for SSH access"
 }
 
 variable "instance_type" {
   type        = string
-  default     = "t3.xlarge" # CPU default: ~$0.1664/hr. Switch to "g4dn.xlarge" (~$0.526/hr) for GPU
-  description = "EC2 instance type (t3.xlarge for cheap CPU, g4dn.xlarge for NVIDIA T4 GPU)"
+  default     = "m7i-flex.large" # Eligible on Free-Tier restricted accounts (2 vCPU, 8 GB RAM)
+  description = "EC2 instance type (m7i-flex.large for 8 GB RAM)"
 }
 
 variable "admin_ip" {
@@ -77,7 +83,9 @@ resource "aws_iam_role_policy" "bedrock_access" {
           "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
           "arn:aws:bedrock:*:*:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
           "arn:aws:bedrock:*:*:inference-profile/us.amazon.nova-micro-v1:0",
-          "arn:aws:bedrock:*:*:inference-profile/us.amazon.nova-pro-v1:0"
+          "arn:aws:bedrock:*:*:inference-profile/us.amazon.nova-pro-v1:0",
+          "arn:aws:bedrock:*:*:inference-profile/ap.amazon.nova-micro-v1:0",
+          "arn:aws:bedrock:*:*:inference-profile/ap.amazon.nova-pro-v1:0"
         ]
       }
     ]
@@ -152,6 +160,7 @@ resource "aws_instance" "app_host" {
   ami                  = data.aws_ami.al2023.id
   instance_type        = var.instance_type
   iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
+  key_name             = var.key_pair_name
   vpc_security_group_ids = [aws_security_group.agent_sg.id]
 
   root_block_device {
@@ -162,6 +171,13 @@ resource "aws_instance" "app_host" {
 
   user_data = <<-EOF
               #!/bin/bash
+              # Setup 4GB swap space to complement the 8GB physical RAM
+              fallocate -l 4G /swapfile
+              chmod 600 /swapfile
+              mkswap /swapfile
+              swapon /swapfile
+              echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
               dnf update -y
               dnf install -y git
               EOF
