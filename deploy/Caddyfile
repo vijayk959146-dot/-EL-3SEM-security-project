@@ -1,6 +1,4 @@
-# Caddy Reverse Proxy Configuration with Automatic HTTPS and Defense-in-Depth Headers
-
-{$DOMAIN_NAME::80} {
+3.27.191.160.sslip.io {
     reverse_proxy app:8501 {
         header_up Host {host}
         header_up X-Real-IP {remote_host}
@@ -8,7 +6,6 @@
         header_up X-Forwarded-Proto {scheme}
     }
 
-    # Defensive Security Headers
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options "nosniff"
