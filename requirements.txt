@@ -5,3 +5,5 @@ python-nmap==0.7.1
 requests==2.32.3
 streamlit==1.40.2
 urllib3==2.2.3
+strands-agents>=1.61.0
+strands-decider>=0.2.0
