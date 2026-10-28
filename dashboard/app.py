@@ -628,20 +628,6 @@ with st.sidebar.expander("🔑 Domain Ownership Verification", expanded=False):
         for dom, info in active_verified.items():
             st.code(f"{dom} [{info.get('method')}]", language="text")
 
-# Glossary in Sidebar
-with st.sidebar.expander("📚 Security Terms Glossary", expanded=False):
-    st.markdown("""
-    - **SSRF**: Server-Side Request Forgery — tricking backend servers into fetching internal network resources.
-    - **DNS Rebinding**: Weaponizing DNS TTL to bypass same-origin & network isolation.
-    - **CT Logs**: Certificate Transparency public audit log of all issued TLS certs.
-    - **SPF / DMARC**: DNS TXT records to stop email spoofing and phishing.
-    - **CISA KEV**: Known Exploited Vulnerabilities actively attacked in the wild.
-    - **EPSS**: Probability (0–100%) of weaponized exploitation in the next 30 days.
-    - **CVSS v3.1**: 0.0–10.0 standard severity rating framework.
-    - **MITRE ATT&CK**: Knowledge base of adversary tactics and techniques.
-    - **OWASP Top 10**: Standard reference for web application security risks.
-    """)
-
 # Sidebar footer status
 st.sidebar.markdown("---")
 auth_status_text = "🔒 Password Protected" if DASHBOARD_PASSWORD else "🟢 Public Demo Mode"
@@ -857,27 +843,21 @@ for severity, css_name in (
 st.markdown("<div class='risk-strip'>" + "".join(chips) + "</div>", unsafe_allow_html=True)
 
 
-# --- Enhanced Cyber Dashboard Tabs ---
-tab_graph, tab_findings, tab_remediation, tab_compliance, tab_waf, tab_mitre, tab_simulator, tab_copilot, tab_overview, tab_osint, tab_diff, tab_export = st.tabs(
+# --- Streamlined Cyber Dashboard Tabs (6 Focused Panels) ---
+tab_graph, tab_findings, tab_remediation, tab_compliance, tab_osint, tab_copilot = st.tabs(
     [
-        "🕸️ Visual Attack Graph",
-        "📋 Ranked Findings",
-        "🛠️ Remediation Sandbox",
-        "🛡️ OWASP & NIST",
-        "🧱 WAF Shield",
-        "🕸️ MITRE ATT&CK",
-        "⚡ Patch Simulator",
-        "🤖 AI SOC Copilot",
-        "📊 Executive Insights",
-        "🌐 OSINT Recon",
-        "🔄 Diff Tracking",
-        "📥 SIEM & Export",
+        "🕸️ Attack Surface Graph",
+        "📋 Findings & Insights",
+        "🛠️ Remediation & WAF",
+        "🛡️ Threat & Compliance",
+        "🌐 OSINT Recon & Diff",
+        "🤖 AI Copilot & SIEM Export",
     ]
 )
 
 
 # ==========================================
-# TAB 0: Interactive Visual Attack Graph (D3.js)
+# TAB 1: Interactive Visual Attack Graph (D3.js)
 # ==========================================
 with tab_graph:
     st.markdown("### 🕸️ Interactive Attack Surface Network Topology")
@@ -894,9 +874,72 @@ with tab_graph:
 
 
 # ==========================================
-# TAB 1: Ranked Findings & Remediation Cards
+# TAB 2: Findings & Strategic Risk Insights
 # ==========================================
 with tab_findings:
+    # 1. Executive Summary & Attack Surface Vector Breakdown
+    col_s1, col_s2 = st.columns([1.8, 1.2])
+    with col_s1:
+        st.markdown("**Executive Summary**")
+        st.info(report.get("summary") or "No executive summary available.")
+        
+        top_risks = report.get("top_risks") or []
+        if top_risks:
+            st.markdown("**🎯 Top Strategic Threats to Mitigate First:**")
+            for idx, r in enumerate(top_risks, 1):
+                st.markdown(f"**{idx}.** {r}")
+
+    with col_s2:
+        st.markdown("**📈 Severity Distribution**")
+        chart_data = {
+            "Severity": list(severity_counts.keys()),
+            "Findings": list(severity_counts.values()),
+        }
+        st.bar_chart(chart_data, x="Severity", y="Findings", color="Severity")
+
+    st.markdown("---")
+    st.markdown("#### 🔬 Attack Surface Vector Breakdown")
+    v_c1, v_c2, v_c3 = st.columns(3)
+    
+    config_issues = sum(1 for f in findings if f.get("source") in ["config_issues", "headers", "http_headers"])
+    net_issues = sum(1 for f in findings if f.get("source") in ["port_scan", "services", "open_ports"])
+    cve_findings = sum(1 for f in findings if f.get("related_cves"))
+
+    with v_c1:
+        st.markdown(
+            f"""
+            <div class="cyber-card">
+                <div class="cyber-label">⚙️ Configuration & Headers</div>
+                <div class="cyber-value">{config_issues}</div>
+                <div class="cyber-sub">Missing CSP, HSTS, X-Frame, Info Leaks</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with v_c2:
+        st.markdown(
+            f"""
+            <div class="cyber-card">
+                <div class="cyber-label">🔌 Open Ports & Services</div>
+                <div class="cyber-value">{net_issues}</div>
+                <div class="cyber-sub">Exposed network service banners</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with v_c3:
+        st.markdown(
+            f"""
+            <div class="cyber-card">
+                <div class="cyber-label">⚠️ Known CVE Vulnerabilities</div>
+                <div class="cyber-value">{cve_findings}</div>
+                <div class="cyber-sub">Correlated against NVD database</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("---")
     st.markdown("### 📋 Prioritized Vulnerabilities & Actionable Fixes")
     st.caption("Issues are ranked in order of defensive urgency using CVSS, exploit probability (EPSS), and active KEV threats.")
 
@@ -998,665 +1041,587 @@ with tab_findings:
 
 
 # ==========================================
-# TAB 2: Remediation Sandbox & Code Generator
+# TAB 3: Remediation Engineering & WAF Protection
 # ==========================================
 with tab_remediation:
-    st.markdown("### 🛠️ Automated Remediation & Hardening Code Generator")
-    st.caption("Generate drop-in, syntax-validated configuration files tailored for your production stack.")
+    st.markdown("### 🛠️ Remediation Engineering & WAF Protection")
+    st.caption("Interactive patch simulation, production server hardening scripts, and edge WAF rules.")
 
-    st.markdown(
-        """
-        <div class="feature-banner">
-            <div style="font-weight:700;color:#38bdf8;font-size:1.05rem;margin-bottom:4px;">
-                🚀 Instant Infrastructure Hardening
-            </div>
-            <div style="color:#94a3b8;font-size:0.88rem;">
-                Select your web server, edge proxy, or cloud environment below to generate copy-paste configuration snippets that address missing headers, weak TLS, email spoofing, and port exposure.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    sub_rem_code, sub_rem_waf, sub_rem_sim = st.tabs(
+        ["🚀 Server Hardening", "🧱 WAF Shield Rules", "⚡ 'What-If' Patch Simulator"]
     )
 
-    rem_choice = st.radio(
-        "Select Target Environment:",
-        [
-            "Nginx Web Server (`nginx.conf`)",
-            "Apache HTTP Server (`.htaccess` / `httpd.conf`)",
-            "Caddy Server (`Caddyfile`)",
-            "Cloudflare Edge (Workers / Transform Rules)",
-            "Node.js / Express (`helmet` Middleware)",
-            "DNS Email Security Records (SPF & DMARC TXT)",
-            "Linux Firewall (`ufw` & `iptables`)",
-        ],
-        horizontal=True,
-    )
+    with sub_rem_code:
+        st.markdown(
+            """
+            <div class="feature-banner">
+                <div style="font-weight:700;color:#38bdf8;font-size:1.05rem;margin-bottom:4px;">
+                    🚀 Instant Infrastructure Hardening
+                </div>
+                <div style="color:#94a3b8;font-size:0.88rem;">
+                    Select your web server, edge proxy, or cloud environment below to generate copy-paste configuration snippets that address missing headers, weak TLS, email spoofing, and port exposure.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    exposed_ports: list[int] = []
-    for p in discovered_ports:
-        if isinstance(p, dict) and str(p.get("port", "")).isdigit():
-            exposed_ports.append(int(p["port"]))
-        elif isinstance(p, int):
-            exposed_ports.append(p)
+        rem_choice = st.radio(
+            "Select Target Environment:",
+            [
+                "Nginx Web Server (`nginx.conf`)",
+                "Apache HTTP Server (`.htaccess` / `httpd.conf`)",
+                "Caddy Server (`Caddyfile`)",
+                "Cloudflare Edge (Workers / Transform Rules)",
+                "Node.js / Express (`helmet` Middleware)",
+                "DNS Email Security Records (SPF & DMARC TXT)",
+                "Linux Firewall (`ufw` & `iptables`)",
+            ],
+            horizontal=True,
+        )
 
-    if "Nginx" in rem_choice:
-        code_text = generate_nginx_hardening(findings, target=target)
-        lang = "nginx"
-        filename = f"nginx_hardening_{target}.conf"
-    elif "Apache" in rem_choice:
-        code_text = generate_apache_hardening(findings, target=target)
-        lang = "apacheconf"
-        filename = f"apache_hardening_{target}.conf"
-    elif "Caddy" in rem_choice:
-        code_text = generate_caddy_hardening(findings, target=target)
-        lang = "caddyfile"
-        filename = "Caddyfile"
-    elif "Cloudflare" in rem_choice:
-        code_text = generate_cloudflare_rules(findings, target=target)
-        lang = "javascript"
-        filename = f"cloudflare_headers_{target}.js"
-    elif "Node" in rem_choice:
-        code_text = generate_node_helmet(findings)
-        lang = "javascript"
-        filename = "security-middleware.js"
-    elif "DNS" in rem_choice:
-        code_text = generate_dns_hardening(target=target)
-        lang = "dns"
-        filename = f"dns_security_{target}.zone"
-    else:
-        code_text = generate_firewall_rules(exposed_ports or None)
-        lang = "bash"
-        filename = f"firewall_rules_{target}.sh"
+        exposed_ports: list[int] = []
+        for p in discovered_ports:
+            if isinstance(p, dict) and str(p.get("port", "")).isdigit():
+                exposed_ports.append(int(p["port"]))
+            elif isinstance(p, int):
+                exposed_ports.append(p)
 
-    st.code(code_text, language=lang)
-    
-    col_dl1, col_dl2 = st.columns([1, 4])
-    with col_dl1:
+        if "Nginx" in rem_choice:
+            code_text = generate_nginx_hardening(findings, target=target)
+            lang = "nginx"
+            filename = f"nginx_hardening_{target}.conf"
+        elif "Apache" in rem_choice:
+            code_text = generate_apache_hardening(findings, target=target)
+            lang = "apacheconf"
+            filename = f"apache_hardening_{target}.conf"
+        elif "Caddy" in rem_choice:
+            code_text = generate_caddy_hardening(findings, target=target)
+            lang = "caddyfile"
+            filename = "Caddyfile"
+        elif "Cloudflare" in rem_choice:
+            code_text = generate_cloudflare_rules(findings, target=target)
+            lang = "javascript"
+            filename = f"cloudflare_headers_{target}.js"
+        elif "Node" in rem_choice:
+            code_text = generate_node_helmet(findings)
+            lang = "javascript"
+            filename = "security-middleware.js"
+        elif "DNS" in rem_choice:
+            code_text = generate_dns_hardening(target=target)
+            lang = "dns"
+            filename = f"dns_security_{target}.zone"
+        else:
+            code_text = generate_firewall_rules(exposed_ports or None)
+            lang = "bash"
+            filename = f"firewall_rules_{target}.sh"
+
+        st.code(code_text, language=lang)
+        
+        col_dl1, col_dl2 = st.columns([1, 4])
+        with col_dl1:
+            st.download_button(
+                label=f"💾 Download `{filename}`",
+                data=code_text,
+                file_name=filename,
+                mime="text/plain",
+                use_container_width=True,
+                type="primary",
+            )
+
+    with sub_rem_waf:
+        st.caption("Export ready-to-import firewall rules to block exploit scanners and enforce header protections directly at the network edge.")
+
+        waf_env = st.radio(
+            "Select WAF Platform:",
+            ["AWS WAF (WebACL JSON)", "Cloudflare WAF (Custom Rules Expression)", "ModSecurity / Coraza (.conf)"],
+            horizontal=True,
+        )
+
+        if "AWS" in waf_env:
+            waf_code = generate_aws_waf_json(findings, target=target)
+            waf_lang = "json"
+            waf_file = f"aws_waf_shield_{target}.json"
+        elif "Cloudflare" in waf_env:
+            waf_code = generate_cloudflare_waf_rules(findings, target=target)
+            waf_lang = "bash"
+            waf_file = f"cloudflare_waf_{target}.txt"
+        else:
+            waf_code = generate_modsecurity_rules(findings, target=target)
+            waf_lang = "apacheconf"
+            waf_file = f"modsecurity_{target}.conf"
+
+        st.code(waf_code, language=waf_lang)
         st.download_button(
-            label=f"💾 Download `{filename}`",
-            data=code_text,
-            file_name=filename,
+            label=f"💾 Download `{waf_file}`",
+            data=waf_code,
+            file_name=waf_file,
             mime="text/plain",
-            use_container_width=True,
             type="primary",
         )
 
+    with sub_rem_sim:
+        st.caption("Select the findings you plan to remediate to see how your defensive Threat Score and exposure posture immediately improves.")
+
+        if "simulated_patches" not in st.session_state:
+            st.session_state.simulated_patches = set()
+
+        sim_col1, sim_col2 = st.columns([1.6, 1.2])
+
+        with sim_col1:
+            st.markdown("#### 🛠️ Check Remediated / Mitigated Items:")
+            for idx, f in enumerate(findings):
+                title = f.get("title", f"Finding #{idx+1}")
+                sev = str(f.get("severity", "Info")).title()
+                rank = f.get("rank", idx+1)
+                key = f"sim_cb_{rank}_{idx}"
+                
+                is_patched = st.checkbox(
+                    f"#{rank} [{sev.upper()}] {title}",
+                    key=key,
+                    value=(key in st.session_state.simulated_patches),
+                )
+                if is_patched:
+                    st.session_state.simulated_patches.add(key)
+                else:
+                    st.session_state.simulated_patches.discard(key)
+
+        with sim_col2:
+            sim_counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0, "Info": 0}
+            for idx, f in enumerate(findings):
+                key = f"sim_cb_{f.get('rank', idx+1)}_{idx}"
+                if key not in st.session_state.simulated_patches:
+                    sev = str(f.get("severity", "Info")).title()
+                    sim_counts[sev if sev in sim_counts else "Info"] += 1
+
+            sim_raw = (
+                sim_counts["Critical"] * 30
+                + sim_counts["High"] * 18
+                + sim_counts["Medium"] * 8
+                + sim_counts["Low"] * 3
+                + sim_counts["Info"] * 1
+            )
+            sim_risk = min(100, sim_raw)
+            score_diff = risk_score - sim_risk
+
+            st.markdown(
+                f"""
+                <div class="cyber-card" style="text-align:center;padding:1.5rem;">
+                    <div style="font-size:0.85rem;color:#94a3b8;font-weight:700;text-transform:uppercase;">Simulated Threat Posture</div>
+                    <div style="font-size:3rem;font-weight:900;color:{'#10b981' if sim_risk < 20 else '#38bdf8' if sim_risk < 50 else '#ef4444'};margin:0.5rem 0;">
+                        {sim_risk}/100
+                    </div>
+                    <div style="font-size:0.95rem;color:#34d399;font-weight:700;">
+                        🔻 Risk Reduced by {score_diff} points ({round((score_diff/max(1, risk_score))*100)}% drop)
+                    </div>
+                    <div style="font-size:0.8rem;color:#94a3b8;margin-top:8px;">
+                        Baseline: {risk_score}/100 ➔ Simulated: {sim_risk}/100
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            st.markdown("---")
+            st.markdown("**Simulated Remaining Severity Breakdown:**")
+            chart_data = {
+                "Severity": list(sim_counts.keys()),
+                "Remaining Findings": list(sim_counts.values()),
+            }
+            st.bar_chart(chart_data, x="Severity", y="Remaining Findings")
+
 
 # ==========================================
-# TAB 3: OWASP Top 10 & NIST CSF Compliance
+# TAB 4: Threat Frameworks & Regulatory Compliance
 # ==========================================
 with tab_compliance:
-    st.markdown("### 🛡️ Regulatory & Standard Compliance Matrix")
-    st.caption("Automated mapping against the OWASP Top 10 (2021) Web Security Risks and NIST Cybersecurity Framework (CSF v2.0).")
+    st.markdown("### 🛡️ Threat Frameworks & Regulatory Compliance")
+    st.caption("Adversary tactics mapping against MITRE ATT&CK and compliance posture against OWASP Top 10 & NIST CSF.")
 
-    cmp_c1, cmp_c2 = st.columns([1.5, 1.5])
-    with cmp_c1:
-        st.markdown("#### 🌐 OWASP Top 10 (2021) Breakdown")
-        for cat_id, items in comp_data["owasp_categories"].items():
-            cat_info = OWASP_CATEGORIES.get(cat_id, {})
-            violation_count = len(items)
-            status_label = f"❌ {violation_count} Violation(s)" if violation_count else "✅ Compliant"
-            with st.expander(f"{cat_info.get('icon', '📌')} {cat_id}: {cat_info.get('title')} — {status_label}"):
-                st.markdown(f"**Standard Risk Level:** `{cat_info.get('risk', 'Medium')}`")
-                if items:
-                    st.markdown("**Correlated Target Exposures:**")
-                    for it in items:
-                        st.markdown(f"- `[{it.get('severity', 'Info')}]` {it.get('title')}")
-                else:
-                    st.success("No active findings in this category.")
+    sub_comp_mitre, sub_comp_standards = st.tabs(["🎯 MITRE ATT&CK Matrix", "📜 OWASP Top 10 & NIST CSF"])
 
-    with cmp_c2:
-        st.markdown("#### 🏛️ NIST Cybersecurity Framework (CSF v2.0)")
-        for nist in comp_data["nist_functions"]:
-            st.markdown(
-                f"""
-                <div style="background:rgba(15,23,42,0.7);border:1px solid {nist['color']}44;border-left:4px solid {nist['color']};border-radius:8px;padding:10px 14px;margin-bottom:8px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <span style="font-weight:700;color:#f8fafc;font-size:0.9rem;">[{nist['id']}] {nist['name']}</span>
-                        <span style="color:{nist['color']};font-weight:800;font-size:0.85rem;">{nist['status']}</span>
+    with sub_comp_mitre:
+        mitre_data = map_findings_to_mitre(findings)
+        kill_chain = mitre_data.get("kill_chain", [])
+
+        # Tactic Progression Pipeline
+        kc_cols = st.columns(len(kill_chain))
+        for idx, stage in enumerate(kill_chain):
+            with kc_cols[idx]:
+                count = stage["count"]
+                badge_bg = stage["color"] if count > 0 else "rgba(148,163,184,0.15)"
+                st.markdown(
+                    f"""
+                    <div style="background:rgba(15,23,42,0.8);border:1px solid {stage['color']}44;border-top:3px solid {stage['color']};border-radius:8px;padding:10px;text-align:center;">
+                        <div style="font-size:1.3rem;">{stage['icon']}</div>
+                        <div style="font-weight:700;font-size:0.82rem;color:#f8fafc;margin-top:2px;">{stage['name']}</div>
+                        <div style="font-size:0.75rem;color:#94a3b8;margin-top:4px;">
+                            <span style="background:{badge_bg}33;color:{stage['color']};padding:2px 8px;border-radius:12px;font-weight:700;">
+                                {count} Flags
+                            </span>
+                        </div>
                     </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-
-# ==========================================
-# TAB 4: WAF Rule Shield Exporter
-# ==========================================
-with tab_waf:
-    st.markdown("### 🧱 Web Application Firewall (WAF) Rule Shield")
-    st.caption("Export ready-to-import firewall rules to block exploit scanners and enforce header protections directly at the network edge.")
-
-    waf_env = st.radio(
-        "Select WAF Platform:",
-        ["AWS WAF (WebACL JSON)", "Cloudflare WAF (Custom Rules Expression)", "ModSecurity / Coraza (.conf)"],
-        horizontal=True,
-    )
-
-    if "AWS" in waf_env:
-        waf_code = generate_aws_waf_json(findings, target=target)
-        waf_lang = "json"
-        waf_file = f"aws_waf_shield_{target}.json"
-    elif "Cloudflare" in waf_env:
-        waf_code = generate_cloudflare_waf_rules(findings, target=target)
-        waf_lang = "bash"
-        waf_file = f"cloudflare_waf_{target}.txt"
-    else:
-        waf_code = generate_modsecurity_rules(findings, target=target)
-        waf_lang = "apacheconf"
-        waf_file = f"modsecurity_{target}.conf"
-
-    st.code(waf_code, language=waf_lang)
-    st.download_button(
-        label=f"💾 Download `{waf_file}`",
-        data=waf_code,
-        file_name=waf_file,
-        mime="text/plain",
-        type="primary",
-    )
-
-
-# ==========================================
-# TAB 5: MITRE ATT&CK Matrix & Threat Graph
-# ==========================================
-with tab_mitre:
-    st.markdown("### 🕸️ MITRE ATT&CK Cyber Kill-Chain Matrix")
-    st.caption("Correlation of discovered vulnerabilities and attack surface indicators to the MITRE ATT&CK Enterprise Framework.")
-
-    mitre_data = map_findings_to_mitre(findings)
-    kill_chain = mitre_data.get("kill_chain", [])
-
-    # Tactic Progression Pipeline
-    kc_cols = st.columns(len(kill_chain))
-    for idx, stage in enumerate(kill_chain):
-        with kc_cols[idx]:
-            count = stage["count"]
-            badge_bg = stage["color"] if count > 0 else "rgba(148,163,184,0.15)"
-            st.markdown(
-                f"""
-                <div style="background:rgba(15,23,42,0.8);border:1px solid {stage['color']}44;border-top:3px solid {stage['color']};border-radius:8px;padding:10px;text-align:center;">
-                    <div style="font-size:1.3rem;">{stage['icon']}</div>
-                    <div style="font-weight:700;font-size:0.82rem;color:#f8fafc;margin-top:2px;">{stage['name']}</div>
-                    <div style="font-size:0.75rem;color:#94a3b8;margin-top:4px;">
-                        <span style="background:{badge_bg}33;color:{stage['color']};padding:2px 8px;border-radius:12px;font-weight:700;">
-                            {count} Flags
-                        </span>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-    st.markdown("---")
-    st.subheader("🎯 Flagged MITRE ATT&CK Techniques & Defenses")
-
-    flagged_any = False
-    for stage in kill_chain:
-        if stage["techniques"]:
-            flagged_any = True
-            st.markdown(f"#### {stage['icon']} {stage['name']} (`{stage['tactic_id']}`)")
-            for tech in stage["techniques"]:
-                with st.expander(f"📌 {tech['id']}: {tech['name']} [{tech['relevance']} Priority]"):
-                    st.markdown(f"**MITRE Reference:** [{tech['id']} — {tech['name']}]({tech['url']})")
-                    st.markdown(f"**🛡️ Defensive Mitigation Strategy:**\n{tech['mitigation']}")
-                    
-                    matched_f = mitre_data["technique_findings"].get(tech["id"], [])
-                    if matched_f:
-                        st.markdown("**Correlated Target Findings:**")
-                        for mf in matched_f:
-                            st.markdown(f"- `[{mf.get('severity', 'Info')}]` {mf.get('title')}")
-
-    if not flagged_any:
-        st.info("No active MITRE ATT&CK attack vectors identified.")
-
-
-# ==========================================
-# TAB 6: Real-Time "What-If" Patch Simulator
-# ==========================================
-with tab_simulator:
-    st.markdown("### ⚡ Real-Time \"What-If\" Patch & Threat Reduction Simulator")
-    st.caption("Select the findings you plan to remediate to see how your defensive Threat Score and exposure posture immediately improves.")
-
-    if "simulated_patches" not in st.session_state:
-        st.session_state.simulated_patches = set()
-
-    sim_col1, sim_col2 = st.columns([1.6, 1.2])
-
-    with sim_col1:
-        st.markdown("#### 🛠️ Check Remediated / Mitigated Items:")
-        for idx, f in enumerate(findings):
-            title = f.get("title", f"Finding #{idx+1}")
-            sev = str(f.get("severity", "Info")).title()
-            rank = f.get("rank", idx+1)
-            key = f"sim_cb_{rank}_{idx}"
-            
-            is_patched = st.checkbox(
-                f"#{rank} [{sev.upper()}] {title}",
-                key=key,
-                value=(key in st.session_state.simulated_patches),
-            )
-            if is_patched:
-                st.session_state.simulated_patches.add(key)
-            else:
-                st.session_state.simulated_patches.discard(key)
-
-    with sim_col2:
-        # Recalculate dynamic threat score
-        sim_counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0, "Info": 0}
-        for idx, f in enumerate(findings):
-            key = f"sim_cb_{f.get('rank', idx+1)}_{idx}"
-            if key not in st.session_state.simulated_patches:
-                sev = str(f.get("severity", "Info")).title()
-                sim_counts[sev if sev in sim_counts else "Info"] += 1
-
-        sim_raw = (
-            sim_counts["Critical"] * 30
-            + sim_counts["High"] * 18
-            + sim_counts["Medium"] * 8
-            + sim_counts["Low"] * 3
-            + sim_counts["Info"] * 1
-        )
-        sim_risk = min(100, sim_raw)
-        score_diff = risk_score - sim_risk
-
-        st.markdown(
-            f"""
-            <div class="cyber-card" style="text-align:center;padding:1.5rem;">
-                <div style="font-size:0.85rem;color:#94a3b8;font-weight:700;text-transform:uppercase;">Simulated Threat Posture</div>
-                <div style="font-size:3rem;font-weight:900;color:{'#10b981' if sim_risk < 20 else '#38bdf8' if sim_risk < 50 else '#ef4444'};margin:0.5rem 0;">
-                    {sim_risk}/100
-                </div>
-                <div style="font-size:0.95rem;color:#34d399;font-weight:700;">
-                    🔻 Risk Reduced by {score_diff} points ({round((score_diff/max(1, risk_score))*100)}% drop)
-                </div>
-                <div style="font-size:0.8rem;color:#94a3b8;margin-top:8px;">
-                    Baseline: {risk_score}/100 ➔ Simulated: {sim_risk}/100
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+                    """,
+                    unsafe_allow_html=True,
+                )
 
         st.markdown("---")
-        st.markdown("**Simulated Remaining Severity Breakdown:**")
-        chart_data = {
-            "Severity": list(sim_counts.keys()),
-            "Remaining Findings": list(sim_counts.values()),
-        }
-        st.bar_chart(chart_data, x="Severity", y="Remaining Findings")
+        st.subheader("🎯 Flagged MITRE ATT&CK Techniques & Defenses")
+
+        flagged_any = False
+        for stage in kill_chain:
+            if stage["techniques"]:
+                flagged_any = True
+                st.markdown(f"#### {stage['icon']} {stage['name']} (`{stage['tactic_id']}`)")
+                for tech in stage["techniques"]:
+                    with st.expander(f"📌 {tech['id']}: {tech['name']} [{tech['relevance']} Priority]"):
+                        st.markdown(f"**MITRE Reference:** [{tech['id']} — {tech['name']}]({tech['url']})")
+                        st.markdown(f"**🛡️ Defensive Mitigation Strategy:**\n{tech['mitigation']}")
+                        
+                        matched_f = mitre_data["technique_findings"].get(tech["id"], [])
+                        if matched_f:
+                            st.markdown("**Correlated Target Findings:**")
+                            for mf in matched_f:
+                                st.markdown(f"- `[{mf.get('severity', 'Info')}]` {mf.get('title')}")
+
+        if not flagged_any:
+            st.info("No active MITRE ATT&CK attack vectors identified.")
+
+    with sub_comp_standards:
+        cmp_c1, cmp_c2 = st.columns([1.5, 1.5])
+        with cmp_c1:
+            st.markdown("#### 🌐 OWASP Top 10 (2021) Breakdown")
+            for cat_id, items in comp_data["owasp_categories"].items():
+                cat_info = OWASP_CATEGORIES.get(cat_id, {})
+                violation_count = len(items)
+                status_label = f"❌ {violation_count} Violation(s)" if violation_count else "✅ Compliant"
+                with st.expander(f"{cat_info.get('icon', '📌')} {cat_id}: {cat_info.get('title')} — {status_label}"):
+                    st.markdown(f"**Standard Risk Level:** `{cat_info.get('risk', 'Medium')}`")
+                    if items:
+                        st.markdown("**Correlated Target Exposures:**")
+                        for it in items:
+                            st.markdown(f"- `[{it.get('severity', 'Info')}]` {it.get('title')}")
+                    else:
+                        st.success("No active findings in this category.")
+
+        with cmp_c2:
+            st.markdown("#### 🏛️ NIST Cybersecurity Framework (CSF v2.0)")
+            for nist in comp_data["nist_functions"]:
+                st.markdown(
+                    f"""
+                    <div style="background:rgba(15,23,42,0.7);border:1px solid {nist['color']}44;border-left:4px solid {nist['color']};border-radius:8px;padding:10px 14px;margin-bottom:8px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <span style="font-weight:700;color:#f8fafc;font-size:0.9rem;">[{nist['id']}] {nist['name']}</span>
+                            <span style="color:{nist['color']};font-weight:800;font-size:0.85rem;">{nist['status']}</span>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
 
 # ==========================================
-# TAB 7: AI SOC Security Copilot
-# ==========================================
-with tab_copilot:
-    st.markdown("### 🤖 Interactive AI SOC Security Copilot")
-    st.caption("Ask our AI security intelligence engine questions about findings, attack vectors, or custom remediation strategies.")
-
-    st.markdown(
-        """
-        <div class="feature-banner">
-            <div style="font-weight:700;color:#38bdf8;font-size:1.05rem;margin-bottom:4px;">
-                🧠 Instant Security Analyst Q&A
-            </div>
-            <div style="color:#94a3b8;font-size:0.88rem;">
-                Choose a pre-baked one-click prompt or type any custom security question below to receive context-aware blue-team advice.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    if "copilot_answer" not in st.session_state:
-        st.session_state.copilot_answer = ""
-
-    q_col1, q_col2, q_col3, q_col4 = st.columns(4)
-    with q_col1:
-        if st.button("📊 CISO Executive Brief", use_container_width=True):
-            st.session_state.copilot_user_input = "Generate an executive cyber risk briefing for CISO and senior management."
-    with q_col2:
-        if st.button("⚡ Top 3 Quick Wins", use_container_width=True):
-            st.session_state.copilot_user_input = "What are the top 3 quick-win fixes that provide the highest immediate security impact & risk reduction?"
-    with q_col3:
-        if st.button("🧪 Bash Verification Script", use_container_width=True):
-            st.session_state.copilot_user_input = "Generate a comprehensive bash script to test and verify these fixes."
-    with q_col4:
-        if st.button("🎭 Simulate Attack Path", use_container_width=True):
-            st.session_state.copilot_user_input = "Simulate how a threat actor might attempt to chain these attack surface exposures."
-
-    st.text_area(
-        "Ask AI SOC Copilot a custom question:",
-        placeholder="e.g. How do I harden my reverse proxy against clickjacking and MIME sniffing?",
-        key="copilot_user_input",
-        height=90,
-    )
-    MAX_BEDROCK_QUERIES_PER_SESSION = int(os.getenv("MAX_BEDROCK_QUERIES_PER_SESSION", "20"))
-    current_calls = st.session_state.get("bedrock_query_count", 0)
-    remaining_calls = max(0, MAX_BEDROCK_QUERIES_PER_SESSION - current_calls)
-
-    st.caption(f"🛡️ Demo Safety Guardrail: {remaining_calls}/{MAX_BEDROCK_QUERIES_PER_SESSION} Bedrock queries remaining in this session.")
-
-    if st.button("🚀 Ask SOC Copilot", type="primary"):
-        copilot_query = str(st.session_state.get("copilot_user_input") or "").strip()
-        if not copilot_query:
-            st.warning("Enter a question or choose a one-click prompt first.")
-        elif current_calls >= MAX_BEDROCK_QUERIES_PER_SESSION:
-            st.error(
-                f"🛑 Demo Rate Limit Reached: Maximum of {MAX_BEDROCK_QUERIES_PER_SESSION} Bedrock queries "
-                "allowed per session to prevent runaway API spend. Please refresh your session or log in as administrator."
-            )
-        else:
-            st.session_state.bedrock_query_count = current_calls + 1
-            with st.spinner("AI SOC Analyst reasoning with report telemetry..."):
-                st.session_state.copilot_answer = query_copilot(copilot_query, report)
-
-    if st.session_state.copilot_answer:
-        st.markdown(st.session_state.copilot_answer)
-
-
-# ==========================================
-# TAB 8: Executive Insights & Attack Surface
-# ==========================================
-with tab_overview:
-    st.markdown("### 📊 Executive Summary & Strategic Risk Posture")
-    
-    col_s1, col_s2 = st.columns([1.8, 1.2])
-    with col_s1:
-        st.markdown("**Executive Assessment**")
-        st.info(report.get("summary") or "No executive summary available.")
-        
-        top_risks = report.get("top_risks") or []
-        if top_risks:
-            st.markdown("**🎯 Top Strategic Threats to Mitigate First:**")
-            for idx, r in enumerate(top_risks, 1):
-                st.markdown(f"**{idx}.** {r}")
-
-    with col_s2:
-        st.markdown("**📈 Severity Distribution**")
-        chart_data = {
-            "Severity": list(severity_counts.keys()),
-            "Findings": list(severity_counts.values()),
-        }
-        st.bar_chart(chart_data, x="Severity", y="Findings", color="Severity")
-
-    st.markdown("---")
-    st.markdown("### 🔬 Attack Surface Vector Breakdown")
-    v_c1, v_c2, v_c3 = st.columns(3)
-    
-    config_issues = sum(1 for f in findings if f.get("source") in ["config_issues", "headers", "http_headers"])
-    net_issues = sum(1 for f in findings if f.get("source") in ["port_scan", "services", "open_ports"])
-    cve_findings = sum(1 for f in findings if f.get("related_cves"))
-
-    with v_c1:
-        st.markdown(
-            f"""
-            <div class="cyber-card">
-                <div class="cyber-label">⚙️ Configuration & Headers</div>
-                <div class="cyber-value">{config_issues}</div>
-                <div class="cyber-sub">Missing CSP, HSTS, X-Frame, Info Leaks</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with v_c2:
-        st.markdown(
-            f"""
-            <div class="cyber-card">
-                <div class="cyber-label">🔌 Open Ports & Services</div>
-                <div class="cyber-value">{net_issues}</div>
-                <div class="cyber-sub">Exposed network service banners</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with v_c3:
-        st.markdown(
-            f"""
-            <div class="cyber-card">
-                <div class="cyber-label">⚠️ Known CVE Vulnerabilities</div>
-                <div class="cyber-value">{cve_findings}</div>
-                <div class="cyber-sub">Correlated against NVD database</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-
-# ==========================================
-# TAB 9: OSINT & Attack Surface Intelligence
+# TAB 5: OSINT Reconnaissance & Historical Drift
 # ==========================================
 with tab_osint:
     st.markdown("### 🌐 Passive Intelligence & Attack Surface Recon")
-    st.caption("Non-intrusive metadata gathered from public DNS, TLS certificates, and Certificate Transparency (crt.sh) logs.")
+    st.caption("Non-intrusive metadata gathered from public DNS, TLS certificates, Certificate Transparency, and historical baseline drift.")
 
-    if assets_data:
-        o_tab1, o_tab2, o_tab3, o_tab4 = st.tabs(["📧 DNS & Email Security", "🔒 TLS/SSL Certificate", "📜 CT Subdomains", "🔌 Open Ports"])
+    sub_osint_telemetry, sub_osint_diff = st.tabs(
+        [
+            "🔍 Surface Telemetry & Ports",
+            "🔄 Drift & Regression Tracking",
+        ]
+    )
+
+    with sub_osint_telemetry:
+        if assets_data:
+            o_tab1, o_tab2, o_tab3, o_tab4 = st.tabs(["📧 DNS & Email Security", "🔒 TLS/SSL Certificate", "📜 CT Subdomains", "🔌 Open Ports"])
+            
+            with o_tab1:
+                dns_data = passive_meta.get("dns", {})
+                col_d1, col_d2 = st.columns(2)
+                with col_d1:
+                    st.markdown("**IP Address Records**")
+                    st.write(f"- **A Records:** `{', '.join(dns_data.get('A', [])) or 'None'}`")
+                    st.write(f"- **AAAA (IPv6):** `{', '.join(dns_data.get('AAAA', [])) or 'None'}`")
+                    st.write(f"- **MX (Mail Servers):** `{', '.join(dns_data.get('MX', [])) or 'None'}`")
+                with col_d2:
+                    st.markdown("**Email Spoofing Defenses**")
+                    spf = dns_data.get("SPF")
+                    dmarc = dns_data.get("DMARC")
+                    st.markdown(f"- **SPF Record:** {'`' + spf + '`' if spf else '❌ **Missing SPF Record (High Spoofing Risk)**'}")
+                    st.markdown(f"- **DMARC Record:** {'`' + dmarc + '`' if dmarc else '❌ **Missing DMARC Policy (High Phishing Risk)**'}")
+
+            with o_tab2:
+                tls_data = passive_meta.get("tls", {})
+                if tls_data.get("available"):
+                    t_col1, t_col2 = st.columns(2)
+                    with t_col1:
+                        st.write(f"**Subject Common Name:** `{tls_data.get('subject')}`")
+                        st.write(f"**Certificate Authority:** `{tls_data.get('issuer')}`")
+                        st.write(f"**TLS Protocol:** `{tls_data.get('version')}`")
+                    with t_col2:
+                        days = tls_data.get("days_remaining", 0)
+                        exp_badge = "🟢 Valid" if days > 30 else "⚠️ Expiring Soon"
+                        st.write(f"**Valid Until:** `{tls_data.get('notAfter')}` ({days} days remaining — {exp_badge})")
+                        st.write(f"**Self-Signed Certificate:** `{'❌ Yes (Untrusted)' if tls_data.get('self_signed') else '✅ No (Signed CA)'}`")
+                else:
+                    st.info(f"TLS info: {tls_data.get('error', 'Not available for this target or port 443 closed.')}")
+
+            with o_tab3:
+                ct_subdomains = passive_meta.get("certificate_transparency", [])
+                st.markdown(f"Found **{len(ct_subdomains)}** public subdomains in Certificate Transparency logs (`crt.sh`):")
+                if ct_subdomains:
+                    st.code("\n".join(ct_subdomains), language="text")
+                    st.caption("ℹ️ Note: Subdomains from public CT logs are mapped for reconnaissance awareness only. Active port scanning requires domain verification.")
+                else:
+                    st.info("No subdomains found in CT logs.")
+
+            with o_tab4:
+                ports = assets_data.get("ports", [])
+                if ports:
+                    st.markdown(f"**Discovered Open TCP Ports ({len(ports)}):**")
+                    port_rows = []
+                    for p in ports:
+                        if isinstance(p, dict):
+                            port_rows.append({
+                                "Port": p.get("port"),
+                                "Service": p.get("service", "unknown"),
+                                "Product": p.get("product", "-"),
+                                "Version": p.get("version", "-"),
+                            })
+                        else:
+                            port_rows.append({"Port": p, "Service": "open", "Product": "-", "Version": "-"})
+                    st.dataframe(port_rows, use_container_width=True)
+                else:
+                    st.info("No active open ports logged (or scan run in passive mode).")
+        else:
+            st.info("Run an active or passive scan to populate deep OSINT asset telemetry.")
+
+    with sub_osint_diff:
+        st.markdown("### 🔄 Historical Remediation & Regression Analysis")
+        st.caption("Compare security reports over time to verify whether fixes took effect and catch newly introduced risks.")
+
+        if len(history_files) > 1:
+            prev_options = [f.name for f in history_files if not (selected_history and f.name == selected_history.name)]
+            comp_file = st.selectbox("Select Baseline Comparison Scan:", prev_options, key="baseline_diff_sel")
+            
+            if comp_file:
+                comp_path = next((f for f in history_files if f.name == comp_file), None)
+                if comp_path:
+                    try:
+                        baseline_report = json.loads(comp_path.read_text(encoding="utf-8"))
+                        diff = diff_reports(report, baseline_report)
+                        
+                        d_c1, d_c2, d_c3 = st.columns(3)
+                        d_c1.metric("🆕 New Vulnerabilities", len(diff["new"]), delta=f"+{len(diff['new'])}" if diff["new"] else "0", delta_color="inverse")
+                        d_c2.metric("✅ Remediated Issues", len(diff["resolved"]), delta=f"-{len(diff['resolved'])}" if diff["resolved"] else "0", delta_color="normal")
+                        d_c3.metric("🔄 Persisting Issues", len(diff["unchanged"]))
+
+                        dt_new, dt_res, dt_unc = st.tabs(["🆕 New Issues", "✅ Remediated Issues", "🔄 Persisting Issues"])
+                        with dt_new:
+                            if diff["new"]:
+                                for item in diff["new"]:
+                                    st.error(f"**[NEW]** {item.get('title')} ({item.get('severity')}) — {item.get('exploitability')}")
+                            else:
+                                st.success("No new vulnerabilities detected since baseline!")
+                        with dt_res:
+                            if diff["resolved"]:
+                                for item in diff["resolved"]:
+                                    st.success(f"**[RESOLVED]** {item.get('title')} ({item.get('severity')})")
+                            else:
+                                st.info("No previously open vulnerabilities were resolved in this run.")
+                        with dt_unc:
+                            if diff["unchanged"]:
+                                for item in diff["unchanged"]:
+                                    st.warning(f"**[PERSISTING]** {item.get('title')} ({item.get('severity')})")
+                            else:
+                                st.info("No overlapping findings.")
+                    except Exception as ex:
+                        st.error(f"Failed to diff reports: {ex}")
+        else:
+            st.info("Run multiple assessments over time to generate historical diffs and remediation metrics.")
+
+
+# ==========================================
+# TAB 6: AI SOC Intelligence & SIEM Exports
+# ==========================================
+with tab_copilot:
+    sub_copilot_chat, sub_copilot_export = st.tabs(
+        [
+            "🧠 AI SOC Copilot",
+            "📥 Reports & SIEM Export",
+        ]
+    )
+
+    with sub_copilot_chat:
+        st.markdown("### 🤖 Interactive AI SOC Security Copilot")
+        st.caption("Ask our AI security intelligence engine questions about findings, attack vectors, or custom remediation strategies.")
+
+        st.markdown(
+            """
+            <div class="feature-banner">
+                <div style="font-weight:700;color:#38bdf8;font-size:1.05rem;margin-bottom:4px;">
+                    🧠 Instant Security Analyst Q&A
+                </div>
+                <div style="color:#94a3b8;font-size:0.88rem;">
+                    Choose a pre-baked one-click prompt or type any custom security question below to receive context-aware blue-team advice.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if "copilot_answer" not in st.session_state:
+            st.session_state.copilot_answer = ""
+
+        q_col1, q_col2, q_col3, q_col4 = st.columns(4)
+        with q_col1:
+            if st.button("📊 CISO Executive Brief", use_container_width=True):
+                st.session_state.copilot_user_input = "Generate an executive cyber risk briefing for CISO and senior management."
+        with q_col2:
+            if st.button("⚡ Top 3 Quick Wins", use_container_width=True):
+                st.session_state.copilot_user_input = "What are the top 3 quick-win fixes that provide the highest immediate security impact & risk reduction?"
+        with q_col3:
+            if st.button("🧪 Bash Verification Script", use_container_width=True):
+                st.session_state.copilot_user_input = "Generate a comprehensive bash script to test and verify these fixes."
+        with q_col4:
+            if st.button("🎭 Simulate Attack Path", use_container_width=True):
+                st.session_state.copilot_user_input = "Simulate how a threat actor might attempt to chain these attack surface exposures."
+
+        st.text_area(
+            "Ask AI SOC Copilot a custom question:",
+            placeholder="e.g. How do I harden my reverse proxy against clickjacking and MIME sniffing?",
+            key="copilot_user_input",
+            height=90,
+        )
+        MAX_BEDROCK_QUERIES_PER_SESSION = int(os.getenv("MAX_BEDROCK_QUERIES_PER_SESSION", "20"))
+        current_calls = st.session_state.get("bedrock_query_count", 0)
+        remaining_calls = max(0, MAX_BEDROCK_QUERIES_PER_SESSION - current_calls)
+
+        st.caption(f"🛡️ Demo Safety Guardrail: {remaining_calls}/{MAX_BEDROCK_QUERIES_PER_SESSION} Bedrock queries remaining in this session.")
+
+        if st.button("🚀 Ask SOC Copilot", type="primary"):
+            copilot_query = str(st.session_state.get("copilot_user_input") or "").strip()
+            if not copilot_query:
+                st.warning("Enter a question or choose a one-click prompt first.")
+            elif current_calls >= MAX_BEDROCK_QUERIES_PER_SESSION:
+                st.error(
+                    f"🛑 Demo Rate Limit Reached: Maximum of {MAX_BEDROCK_QUERIES_PER_SESSION} Bedrock queries "
+                    "allowed per session to prevent runaway API spend. Please refresh your session or log in as administrator."
+                )
+            else:
+                st.session_state.bedrock_query_count = current_calls + 1
+                with st.spinner("AI SOC Analyst reasoning with report telemetry..."):
+                    st.session_state.copilot_answer = query_copilot(copilot_query, report)
+
+        if st.session_state.copilot_answer:
+            st.markdown(st.session_state.copilot_answer)
+
+    with sub_copilot_export:
+        st.markdown("### 📥 Executive Reports & SIEM Integration")
+        st.caption("Download formatted reports for technical stakeholders or export directly to SIEM pipelines (Splunk / Elastic) and Webhooks.")
+
+        exp_col1, exp_col2, exp_col3 = st.columns(3)
         
-        with o_tab1:
-            dns_data = passive_meta.get("dns", {})
-            col_d1, col_d2 = st.columns(2)
-            with col_d1:
-                st.markdown("**IP Address Records**")
-                st.write(f"- **A Records:** `{', '.join(dns_data.get('A', [])) or 'None'}`")
-                st.write(f"- **AAAA (IPv6):** `{', '.join(dns_data.get('AAAA', [])) or 'None'}`")
-                st.write(f"- **MX (Mail Servers):** `{', '.join(dns_data.get('MX', [])) or 'None'}`")
-            with col_d2:
-                st.markdown("**Email Spoofing Defenses**")
-                spf = dns_data.get("SPF")
-                dmarc = dns_data.get("DMARC")
-                st.markdown(f"- **SPF Record:** {'`' + spf + '`' if spf else '❌ **Missing SPF Record (High Spoofing Risk)**'}")
-                st.markdown(f"- **DMARC Record:** {'`' + dmarc + '`' if dmarc else '❌ **Missing DMARC Policy (High Phishing Risk)**'}")
+        with exp_col1:
+            st.markdown(
+                """
+                <div class="cyber-card" style="text-align:center;">
+                    <div style="font-size:2rem;margin-bottom:0.5rem;">📄</div>
+                    <div style="font-weight:700;color:#f8fafc;margin-bottom:0.5rem;">HTML Executive Report</div>
+                    <p style="font-size:0.8rem;color:#94a3b8;margin-bottom:1rem;">Standalone interactive HTML briefing with full finding breakdown</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            html_bytes = generate_html_report(report)
+            st.download_button(
+                label="Download HTML Briefing",
+                data=html_bytes,
+                file_name=f"security_assessment_{target}.html",
+                mime="text/html",
+                use_container_width=True,
+                type="primary",
+            )
 
-        with o_tab2:
-            tls_data = passive_meta.get("tls", {})
-            if tls_data.get("available"):
-                t_col1, t_col2 = st.columns(2)
-                with t_col1:
-                    st.write(f"**Subject Common Name:** `{tls_data.get('subject')}`")
-                    st.write(f"**Certificate Authority:** `{tls_data.get('issuer')}`")
-                    st.write(f"**TLS Protocol:** `{tls_data.get('version')}`")
-                with t_col2:
-                    days = tls_data.get("days_remaining", 0)
-                    exp_badge = "🟢 Valid" if days > 30 else "⚠️ Expiring Soon"
-                    st.write(f"**Valid Until:** `{tls_data.get('notAfter')}` ({days} days remaining — {exp_badge})")
-                    st.write(f"**Self-Signed Certificate:** `{'❌ Yes (Untrusted)' if tls_data.get('self_signed') else '✅ No (Signed CA)'}`")
-            else:
-                st.info(f"TLS info: {tls_data.get('error', 'Not available for this target or port 443 closed.')}")
+        with exp_col2:
+            st.markdown(
+                """
+                <div class="cyber-card" style="text-align:center;">
+                    <div style="font-size:2rem;margin-bottom:0.5rem;">📊</div>
+                    <div style="font-weight:700;color:#f8fafc;margin-bottom:0.5rem;">CSV Findings Matrix</div>
+                    <p style="font-size:0.8rem;color:#94a3b8;margin-bottom:1rem;">Spreadsheet-ready findings with formula injection protection</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            csv_bytes = generate_csv_report(report)
+            st.download_button(
+                label="Download CSV Matrix",
+                data=csv_bytes,
+                file_name=f"security_findings_{target}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
 
-        with o_tab3:
-            ct_subdomains = passive_meta.get("certificate_transparency", [])
-            st.markdown(f"Found **{len(ct_subdomains)}** public subdomains in Certificate Transparency logs (`crt.sh`):")
-            if ct_subdomains:
-                st.code("\n".join(ct_subdomains), language="text")
-                st.caption("ℹ️ Note: Subdomains from public CT logs are mapped for reconnaissance awareness only. Active port scanning requires domain verification.")
-            else:
-                st.info("No subdomains found in CT logs.")
+        with exp_col3:
+            st.markdown(
+                """
+                <div class="cyber-card" style="text-align:center;">
+                    <div style="font-size:2rem;margin-bottom:0.5rem;">💾</div>
+                    <div style="font-weight:700;color:#f8fafc;margin-bottom:0.5rem;">Raw JSON Schema</div>
+                    <p style="font-size:0.8rem;color:#94a3b8;margin-bottom:1rem;">Direct machine-readable JSON for SIEM / CI/CD integration</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            raw_json_str = json.dumps(report, indent=2)
+            st.download_button(
+                label="Download Raw JSON",
+                data=raw_json_str,
+                file_name=f"report_{target}.json",
+                mime="application/json",
+                use_container_width=True,
+            )
 
-        with o_tab4:
-            ports = assets_data.get("ports", [])
-            if ports:
-                st.markdown(f"**Discovered Open TCP Ports ({len(ports)}):**")
-                port_rows = []
-                for p in ports:
-                    if isinstance(p, dict):
-                        port_rows.append({
-                            "Port": p.get("port"),
-                            "Service": p.get("service", "unknown"),
-                            "Product": p.get("product", "-"),
-                            "Version": p.get("version", "-"),
-                        })
-                    else:
-                        port_rows.append({"Port": p, "Service": "open", "Product": "-", "Version": "-"})
-                st.dataframe(port_rows, use_container_width=True)
-            else:
-                st.info("No active open ports logged (or scan run in passive mode).")
-    else:
-        st.info("Run an active or passive scan to populate deep OSINT asset telemetry.")
-
-
-# ==========================================
-# TAB 10: History & Remediation Diff
-# ==========================================
-with tab_diff:
-    st.markdown("### 🔄 Historical Remediation & Regression Analysis")
-    st.caption("Compare security reports over time to verify whether fixes took effect and catch newly introduced risks.")
-
-    if len(history_files) > 1:
-        prev_options = [f.name for f in history_files if not (selected_history and f.name == selected_history.name)]
-        comp_file = st.selectbox("Select Baseline Comparison Scan:", prev_options, key="baseline_diff_sel")
+        st.markdown("---")
+        st.markdown("### 🔌 SIEM Ingestion & Live Webhook Alerting")
         
-        if comp_file:
-            comp_path = next((f for f in history_files if f.name == comp_file), None)
-            if comp_path:
-                try:
-                    baseline_report = json.loads(comp_path.read_text(encoding="utf-8"))
-                    diff = diff_reports(report, baseline_report)
-                    
-                    d_c1, d_c2, d_c3 = st.columns(3)
-                    d_c1.metric("🆕 New Vulnerabilities", len(diff["new"]), delta=f"+{len(diff['new'])}" if diff["new"] else "0", delta_color="inverse")
-                    d_c2.metric("✅ Remediated Issues", len(diff["resolved"]), delta=f"-{len(diff['resolved'])}" if diff["resolved"] else "0", delta_color="normal")
-                    d_c3.metric("🔄 Persisting Issues", len(diff["unchanged"]))
+        siem_col1, siem_col2 = st.columns(2)
+        
+        with siem_col1:
+            st.markdown("**ArcSight / Splunk Common Event Format (CEF)**")
+            cef_data = generate_cef_export(report)
+            st.download_button(
+                "Download CEF Syslog Format",
+                data=cef_data,
+                file_name=f"findings_{target}.cef",
+                mime="text/plain",
+                use_container_width=True,
+            )
+            st.markdown("**Elastic Common Schema (ECS JSON-Lines)**")
+            ecs_data = generate_ecs_export(report)
+            st.download_button(
+                "Download ECS JSONL Format",
+                data=ecs_data,
+                file_name=f"findings_{target}.ecs.jsonl",
+                mime="application/x-ndjson",
+                use_container_width=True,
+            )
 
-                    dt_new, dt_res, dt_unc = st.tabs(["🆕 New Issues", "✅ Remediated Issues", "🔄 Persisting Issues"])
-                    with dt_new:
-                        if diff["new"]:
-                            for item in diff["new"]:
-                                st.error(f"**[NEW]** {item.get('title')} ({item.get('severity')}) — {item.get('exploitability')}")
+        with siem_col2:
+            st.markdown("**🚨 Webhook Alert Dispatcher (Slack / Discord / Teams)**")
+            webhook_input = st.text_input("Webhook URL", placeholder="https://hooks.slack.com/services/...", key="wh_url_input")
+            if st.button("📤 Send Test SOC Alert to Webhook", use_container_width=True):
+                if webhook_input:
+                    with st.spinner("Dispatching webhook payload..."):
+                        ok, msg = send_webhook_alert(webhook_input.strip(), report)
+                        if ok:
+                            st.success(msg)
                         else:
-                            st.success("No new vulnerabilities detected since baseline!")
-                    with dt_res:
-                        if diff["resolved"]:
-                            for item in diff["resolved"]:
-                                st.success(f"**[RESOLVED]** {item.get('title')} ({item.get('severity')})")
-                        else:
-                            st.info("No previously open vulnerabilities were resolved in this run.")
-                    with dt_unc:
-                        if diff["unchanged"]:
-                            for item in diff["unchanged"]:
-                                st.warning(f"**[PERSISTING]** {item.get('title')} ({item.get('severity')})")
-                        else:
-                            st.info("No overlapping findings.")
-                except Exception as ex:
-                    st.error(f"Failed to diff reports: {ex}")
-    else:
-        st.info("Run multiple assessments over time to generate historical diffs and remediation metrics.")
+                            st.error(msg)
+                else:
+                    st.error("Please provide a webhook URL.")
 
-
-# ==========================================
-# TAB 11: Export, SIEM & Webhook Dispatch
-# ==========================================
-with tab_export:
-    st.markdown("### 📥 Executive Reports & SIEM Integration")
-    st.caption("Download formatted reports for technical stakeholders or export directly to SIEM pipelines (Splunk / Elastic) and Webhooks.")
-
-    exp_col1, exp_col2, exp_col3 = st.columns(3)
-    
-    with exp_col1:
-        st.markdown(
-            """
-            <div class="cyber-card" style="text-align:center;">
-                <div style="font-size:2rem;margin-bottom:0.5rem;">📄</div>
-                <div style="font-weight:700;color:#f8fafc;margin-bottom:0.5rem;">HTML Executive Report</div>
-                <p style="font-size:0.8rem;color:#94a3b8;margin-bottom:1rem;">Standalone interactive HTML briefing with full finding breakdown</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        html_bytes = generate_html_report(report)
-        st.download_button(
-            label="Download HTML Briefing",
-            data=html_bytes,
-            file_name=f"security_assessment_{target}.html",
-            mime="text/html",
-            use_container_width=True,
-            type="primary",
-        )
-
-    with exp_col2:
-        st.markdown(
-            """
-            <div class="cyber-card" style="text-align:center;">
-                <div style="font-size:2rem;margin-bottom:0.5rem;">📊</div>
-                <div style="font-weight:700;color:#f8fafc;margin-bottom:0.5rem;">CSV Findings Matrix</div>
-                <p style="font-size:0.8rem;color:#94a3b8;margin-bottom:1rem;">Spreadsheet-ready findings with formula injection protection</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        csv_bytes = generate_csv_report(report)
-        st.download_button(
-            label="Download CSV Matrix",
-            data=csv_bytes,
-            file_name=f"security_findings_{target}.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
-
-    with exp_col3:
-        st.markdown(
-            """
-            <div class="cyber-card" style="text-align:center;">
-                <div style="font-size:2rem;margin-bottom:0.5rem;">💾</div>
-                <div style="font-weight:700;color:#f8fafc;margin-bottom:0.5rem;">Raw JSON Schema</div>
-                <p style="font-size:0.8rem;color:#94a3b8;margin-bottom:1rem;">Direct machine-readable JSON for SIEM / CI/CD integration</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        raw_json_str = json.dumps(report, indent=2)
-        st.download_button(
-            label="Download Raw JSON",
-            data=raw_json_str,
-            file_name=f"report_{target}.json",
-            mime="application/json",
-            use_container_width=True,
-        )
-
-    st.markdown("---")
-    st.markdown("### 🔌 SIEM Ingestion & Live Webhook Alerting")
-    
-    siem_col1, siem_col2 = st.columns(2)
-    
-    with siem_col1:
-        st.markdown("**ArcSight / Splunk Common Event Format (CEF)**")
-        cef_data = generate_cef_export(report)
-        st.download_button(
-            "Download CEF Syslog Format",
-            data=cef_data,
-            file_name=f"findings_{target}.cef",
-            mime="text/plain",
-            use_container_width=True,
-        )
-        st.markdown("**Elastic Common Schema (ECS JSON-Lines)**")
-        ecs_data = generate_ecs_export(report)
-        st.download_button(
-            "Download ECS JSONL Format",
-            data=ecs_data,
-            file_name=f"findings_{target}.ecs.jsonl",
-            mime="application/x-ndjson",
-            use_container_width=True,
-        )
-
-    with siem_col2:
-        st.markdown("**🚨 Webhook Alert Dispatcher (Slack / Discord / Teams)**")
-        webhook_input = st.text_input("Webhook URL", placeholder="https://hooks.slack.com/services/...", key="wh_url_input")
-        if st.button("📤 Send Test SOC Alert to Webhook", use_container_width=True):
-            if webhook_input:
-                with st.spinner("Dispatching webhook payload..."):
-                    ok, msg = send_webhook_alert(webhook_input.strip(), report)
-                    if ok:
-                        st.success(msg)
-                    else:
-                        st.error(msg)
-            else:
-                st.error("Please provide a webhook URL.")
-
-
-# --- Pipeline Diagnostic Notes ---
-notes = report.get("notes") or []
-if notes:
-    st.markdown("---")
-    with st.expander("ℹ️ AI Engine & Pipeline Diagnostic Telemetry", expanded=False):
-        for note in notes:
-            st.markdown(f"- `{note}`")
