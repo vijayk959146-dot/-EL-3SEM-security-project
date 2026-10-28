@@ -1,7 +1,8 @@
 """
-Interactive Cyber Attack Surface Network Graph Component.
-Renders an animated, high-tech visual node graph of target infrastructure,
-subdomains, open ports, and correlated vulnerability nodes.
+Field Report Exposure Diagram Component.
+Renders a flat, layered left-to-right architectural mapping:
+Target -> IPs -> Open Ports / Services -> Findings.
+Thin 1px connectors, monospace labels, severity squares, zero neon, theme-aware.
 """
 
 from __future__ import annotations
@@ -9,6 +10,12 @@ from __future__ import annotations
 import html
 import json
 from typing import Any
+from dashboard.theme import get_theme_tokens
+
+
+def esc(text: Any) -> str:
+    """Escapes untrusted content for safe HTML/SVG inclusion."""
+    return html.escape(str(text if text is not None else ""), quote=True)
 
 
 def render_attack_surface_graph_html(
@@ -17,295 +24,382 @@ def render_attack_surface_graph_html(
     ports: list[Any] | None = None,
     subdomains: list[str] | None = None,
     ips: list[str] | None = None,
+    theme_mode: str = "light",
 ) -> str:
-    """Generate standalone interactive HTML5 / SVG Cyber Network Graph."""
-    nodes = []
-    links = []
+    """Generate a clean, flat left-to-right SVG diagram with details inspector."""
+    tokens = get_theme_tokens(theme_mode)
 
-    def _safe(text: Any) -> str:
-        return html.escape(str(text or ""), quote=True)
+    # Clean & safely escape inputs
+    safe_target = esc(str(target or "localhost").strip())
+    clean_ips = [esc(str(ip).strip()) for ip in (ips or []) if ip][:6]
+    if not clean_ips:
+        clean_ips = ["127.0.0.1"] if "localhost" in safe_target.lower() else ["Unresolved"]
 
-    # 1. Central Target Node
+    clean_ports = []
+    for p in (ports or [])[:8]:
+        if isinstance(p, dict):
+            clean_ports.append({
+                "port": esc(p.get("port", "unknown")),
+                "service": esc(p.get("service", "tcp")),
+                "product": esc(p.get("product", "")),
+            })
+        else:
+            clean_ports.append({"port": esc(p), "service": "open", "product": ""})
+    if not clean_ports:
+        clean_ports = [{"port": "Passive", "service": "No probed ports", "product": ""}]
+
+    clean_findings = findings[:10]
+
+    # Column X coordinates
+    x_col1 = 40     # Target
+    x_col2 = 230    # IPs
+    x_col3 = 420    # Ports
+    x_col4 = 630    # Findings
+
+    def compute_y_positions(count: int, row_height: int = 38, offset_top: int = 50) -> list[int]:
+        return [offset_top + i * row_height for i in range(count)]
+
+    y_target = [120]
+    y_ips = compute_y_positions(len(clean_ips), row_height=42, offset_top=60)
+    y_ports = compute_y_positions(len(clean_ports), row_height=42, offset_top=50)
+    y_findings = compute_y_positions(max(1, len(clean_findings)), row_height=44, offset_top=40)
+
+    total_height = max(340, max(y_ips[-1] if y_ips else 0, y_ports[-1] if y_ports else 0, y_findings[-1] if y_findings else 0) + 70)
+
+    nodes: list[dict[str, Any]] = []
+    links: list[dict[str, Any]] = []
+
+    # 1. Target node
     nodes.append({
-        "id": "target_root",
-        "name": _safe(target),
-        "type": "target",
-        "color": "#38bdf8",
-        "radius": 28,
-        "icon": "🎯",
-        "desc": _safe(f"Primary Target Workspace: {target}"),
+        "id": "node_target",
+        "col": 1,
+        "x": x_col1,
+        "y": y_target[0],
+        "label": safe_target[:24] + ("..." if len(safe_target) > 24 else ""),
+        "full_name": safe_target,
+        "type": "Target",
+        "details": f"Target: {safe_target}\\nScope: Verified boundary",
     })
 
-    # 2. DNS IP Nodes
-    for idx, ip in enumerate((ips or [])[:4]):
-        node_id = f"ip_{idx}"
+    # 2. IP nodes
+    for idx, (ip_str, y_pos) in enumerate(zip(clean_ips, y_ips)):
+        node_id = f"node_ip_{idx}"
         nodes.append({
             "id": node_id,
-            "name": _safe(ip),
-            "type": "ip",
-            "color": "#3b82f6",
-            "radius": 18,
-            "icon": "🌐",
-            "desc": _safe(f"Resolved IP Endpoint: {ip}"),
+            "col": 2,
+            "x": x_col2,
+            "y": y_pos,
+            "label": ip_str,
+            "full_name": ip_str,
+            "type": "Network Endpoint",
+            "details": f"IP: {ip_str}\\nResolution: DNS A/AAAA record",
         })
-        links.append({"source": "target_root", "target": node_id, "color": "rgba(59,130,246,0.4)"})
+        links.append({"source": "node_target", "target": node_id})
 
-    # 3. Subdomain Nodes
-    for idx, sub in enumerate((subdomains or [])[:6]):
-        node_id = f"sub_{idx}"
+    # 3. Port nodes
+    for idx, (port_obj, y_pos) in enumerate(zip(clean_ports, y_ports)):
+        node_id = f"node_port_{idx}"
+        p_label = f":{port_obj['port']} ({port_obj['service'][:8]})"
         nodes.append({
             "id": node_id,
-            "name": _safe(sub[:22] + ("..." if len(sub) > 22 else "")),
-            "type": "subdomain",
-            "color": "#a855f7",
-            "radius": 16,
-            "icon": "📜",
-            "desc": _safe(f"CT Log Subdomain: {sub}"),
+            "col": 3,
+            "x": x_col3,
+            "y": y_pos,
+            "label": p_label,
+            "full_name": f"Port {port_obj['port']}/{port_obj['service']}",
+            "type": "Service / Port",
+            "details": f"Port: {port_obj['port']}\\nService: {port_obj['service']}\\nBanner: {port_obj['product'] or 'N/A'}",
         })
-        links.append({"source": "target_root", "target": node_id, "color": "rgba(168,85,247,0.35)"})
+        parent_ip = f"node_ip_{min(idx, len(clean_ips)-1)}"
+        links.append({"source": parent_ip, "target": node_id})
 
-    # 4. Port Nodes
-    for idx, p in enumerate((ports or [])[:6]):
-        port_num = p.get("port") if isinstance(p, dict) else p
-        service = p.get("service", "tcp") if isinstance(p, dict) else "open"
-        node_id = f"port_{idx}"
-        nodes.append({
-            "id": node_id,
-            "name": _safe(f":{port_num} ({service})"),
-            "type": "port",
-            "color": "#f59e0b",
-            "radius": 16,
-            "icon": "🔌",
-            "desc": _safe(f"Open Port {port_num} ({service})"),
-        })
-        links.append({"source": "target_root", "target": node_id, "color": "rgba(245,158,11,0.4)"})
+    # 4. Finding nodes
+    if clean_findings:
+        for idx, (f_obj, y_pos) in enumerate(zip(clean_findings, y_findings)):
+            node_id = f"node_finding_{idx}"
+            sev = esc(str(f_obj.get("severity") or "Info").capitalize())
+            title = esc(str(f_obj.get("title") or f"Finding #{idx+1}").strip())
+            short_title = title[:24] + ("..." if len(title) > 24 else "")
+            cves = esc(", ".join(f_obj.get("related_cves") or []) or "None")
+            exploit = esc(str(f_obj.get("exploitability") or "Standard"))
 
-    # 5. Finding / CVE Nodes
-    for idx, f in enumerate(findings[:8]):
-        sev = str(f.get("severity", "Info")).title()
-        color = "#ef4444" if sev == "Critical" else "#f97316" if sev == "High" else "#eab308" if sev == "Medium" else "#3b82f6"
-        node_id = f"finding_{idx}"
-        title = str(f.get("title", f"Finding #{idx+1}"))
+            sev_key = f"sev_{sev[:4].lower()}"
+            sev_color = tokens.get(sev_key, tokens["sev_info"])
+
+            nodes.append({
+                "id": node_id,
+                "col": 4,
+                "x": x_col4,
+                "y": y_pos,
+                "label": short_title,
+                "full_name": title,
+                "type": f"Finding ({sev})",
+                "severity": sev,
+                "color": sev_color,
+                "details": f"Finding: {title}\\nSeverity: {sev}\\nRelated CVEs: {cves}\\nExploitability: {exploit}",
+            })
+
+            if clean_ports and "Passive" not in clean_ports[0]["port"]:
+                parent_port = f"node_port_{idx % len(clean_ports)}"
+                links.append({"source": parent_port, "target": node_id})
+            else:
+                links.append({"source": "node_target", "target": node_id})
+    else:
+        node_id = "node_finding_zero"
         nodes.append({
             "id": node_id,
-            "name": _safe(f"[{sev[:4].upper()}] " + (title[:18] + ("..." if len(title) > 18 else ""))),
-            "type": "finding",
-            "color": color,
-            "radius": 20 if sev in ["Critical", "High"] else 15,
-            "icon": "🚨" if sev in ["Critical", "High"] else "⚠️",
-            "desc": _safe(f"{title} ({sev}) — {f.get('exploitability', '')}"),
+            "col": 4,
+            "x": x_col4,
+            "y": 120,
+            "label": "No findings logged",
+            "full_name": "Zero Findings",
+            "type": "Status",
+            "severity": "Info",
+            "color": tokens["sev_info"],
+            "details": "No active vulnerabilities or misconfigurations logged.",
         })
-        # Link finding to target or port
-        links.append({"source": "target_root", "target": node_id, "color": f"{color}55"})
+        links.append({"source": "node_target", "target": node_id})
 
     nodes_json = json.dumps(nodes)
     links_json = json.dumps(links)
 
-    html_code = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="utf-8">
-    <style>
-        body {{
-            margin: 0;
-            background: #090d16;
-            color: #f8fafc;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            overflow: hidden;
-        }}
-        #graph-container {{
-            width: 100%;
-            height: 480px;
-            position: relative;
-            background: radial-gradient(circle at center, #0f172a 0%, #060911 100%);
-            border: 1px solid rgba(56, 189, 248, 0.25);
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: inset 0 0 40px rgba(0,0,0,0.8);
-        }}
-        .grid-overlay {{
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background-image: 
-                linear-gradient(rgba(56, 189, 248, 0.04) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(56, 189, 248, 0.04) 1px, transparent 1px);
-            background-size: 30px 30px;
-            pointer-events: none;
-        }}
-        #tooltip {{
-            position: absolute;
-            display: none;
-            background: rgba(15, 23, 42, 0.95);
-            border: 1px solid #38bdf8;
-            border-radius: 8px;
-            padding: 8px 12px;
-            font-size: 12px;
-            color: #f8fafc;
-            pointer-events: none;
-            box-shadow: 0 4px 20px rgba(0, 242, 254, 0.25);
-            z-index: 100;
-            max-width: 260px;
-            backdrop-filter: blur(8px);
-        }}
-        .legend {{
-            position: absolute;
-            bottom: 12px;
-            left: 14px;
-            display: flex;
-            gap: 12px;
-            background: rgba(15, 23, 42, 0.85);
-            padding: 6px 14px;
-            border-radius: 20px;
-            border: 1px solid rgba(148, 163, 184, 0.2);
-            font-size: 11px;
-            color: #94a3b8;
-            backdrop-filter: blur(8px);
-        }}
-        .legend-item {{ display: flex; align-items: center; gap: 5px; }}
-        .legend-dot {{ width: 8px; height: 8px; border-radius: 50%; }}
-        .radar-sweep {{
-            position: absolute;
-            top: 50%; left: 50%;
-            width: 400px; height: 400px;
-            margin-top: -200px; margin-left: -200px;
-            border-radius: 50%;
-            border: 1px solid rgba(56, 189, 248, 0.1);
-            pointer-events: none;
-        }}
-    </style>
-    <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
-    </head>
-    <body>
-    <div id="graph-container">
-        <div class="grid-overlay"></div>
-        <div class="radar-sweep"></div>
-        <div id="tooltip"></div>
-        <div class="legend">
-            <div class="legend-item"><span class="legend-dot" style="background:#38bdf8;"></span> Target</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#ef4444;"></span> Critical Risk</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#f97316;"></span> High Risk</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#f59e0b;"></span> Port / Service</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#a855f7;"></span> Subdomain</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#3b82f6;"></span> IP Node</div>
-        </div>
-        <svg id="network-svg" width="100%" height="100%" style="min-height:460px;"></svg>
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{
+    background-color: {tokens['bg_surface']};
+    color: {tokens['text_ink']};
+    font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+    font-size: 13px;
+    line-height: 1.4;
+    overflow-x: hidden;
+  }}
+  .exposure-wrap {{
+    display: flex;
+    border: 1px solid {tokens['border_hairline']};
+    border-radius: 3px;
+    background: {tokens['bg_surface']};
+    min-height: {total_height}px;
+  }}
+  .diagram-pane {{
+    flex: 1;
+    overflow-x: auto;
+    position: relative;
+    padding: 10px 0;
+  }}
+  .inspector-pane {{
+    width: 280px;
+    border-left: 1px solid {tokens['border_hairline']};
+    background: {tokens['bg_subtle']};
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }}
+  .inspector-header {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    color: {tokens['text_muted']};
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid {tokens['border_hairline']};
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+  }}
+  .inspector-title {{
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: {tokens['text_ink']};
+    word-break: break-word;
+  }}
+  .inspector-body {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: {tokens['text_muted']};
+    white-space: pre-wrap;
+    line-height: 1.5;
+  }}
+  .inspector-hint {{
+    font-size: 11px;
+    color: {tokens['text_subtle']};
+    font-style: italic;
+    margin-top: 16px;
+  }}
+  .col-label {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    fill: {tokens['text_subtle']};
+    font-weight: 600;
+  }}
+  .conn-line {{
+    stroke: {tokens['border_hairline']};
+    stroke-width: 1px;
+    fill: none;
+    transition: stroke 150ms ease, stroke-width 150ms ease;
+  }}
+  .conn-line.active {{
+    stroke: {tokens['accent']};
+    stroke-width: 1.5px;
+  }}
+  .node-box {{
+    fill: {tokens['bg_surface']};
+    stroke: {tokens['border_hairline']};
+    stroke-width: 1px;
+    rx: 2px;
+    cursor: pointer;
+    transition: stroke 150ms ease, fill 150ms ease;
+  }}
+  .node-box:hover, .node-box.selected {{
+    stroke: {tokens['accent']};
+    fill: {tokens['bg_hover']};
+  }}
+  .node-text {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    fill: {tokens['text_ink']};
+    pointer-events: none;
+  }}
+  .sev-mark {{
+    rx: 1px;
+  }}
+</style>
+</head>
+<body>
+
+<div class="exposure-wrap">
+  <div class="diagram-pane">
+    <svg id="diagram-svg" width="840" height="{total_height}">
+      <text x="{x_col1}" y="25" class="col-label">1. Target</text>
+      <text x="{x_col2}" y="25" class="col-label">2. Resolved IPs</text>
+      <text x="{x_col3}" y="25" class="col-label">3. Open Services</text>
+      <text x="{x_col4}" y="25" class="col-label">4. Discovered Exposures</text>
+
+      <g id="links-group"></g>
+      <g id="nodes-group"></g>
+    </svg>
+  </div>
+
+  <div class="inspector-pane">
+    <div>
+      <div class="inspector-header">Inspector Panel</div>
+      <div id="insp-title" class="inspector-title">Select a node</div>
+      <div id="insp-body" class="inspector-body">Click any node in the exposure graph to inspect endpoint topology, verified boundaries, or finding details.</div>
     </div>
+    <div class="inspector-hint">Layered linear topology: Left &rarr; Right</div>
+  </div>
+</div>
 
-    <script>
-    const nodes = {nodes_json};
-    const links = {links_json};
+<script>
+  const nodes = {nodes_json};
+  const links = {links_json};
+  const nodeMap = {{}};
+  nodes.forEach(n => {{ nodeMap[n.id] = n; }});
 
-    const container = document.getElementById('graph-container');
-    const width = Math.max(window.innerWidth || 0, container.clientWidth || 0, 900);
-    const height = 480;
+  const linksGroup = document.getElementById('links-group');
+  const nodesGroup = document.getElementById('nodes-group');
+  const inspTitle = document.getElementById('insp-title');
+  const inspBody = document.getElementById('insp-body');
 
-    const svg = d3.select("#network-svg")
-        .attr("viewBox", [0, 0, width, height]);
+  const BOX_W = 160;
+  const BOX_H = 30;
 
-    const g = svg.append("g");
+  links.forEach((link, idx) => {{
+    const s = nodeMap[link.source];
+    const t = nodeMap[link.target];
+    if (!s || !t) return;
 
-    // Force simulation
-    const simulation = d3.forceSimulation(nodes)
-        .force("link", d3.forceLink(links).id(d => d.id).distance(110))
-        .force("charge", d3.forceManyBody().strength(-240))
-        .force("center", d3.forceCenter(width / 2, height / 2))
-        .force("collision", d3.forceCollide().radius(d => d.radius + 14));
+    const x1 = s.x + BOX_W;
+    const y1 = s.y + BOX_H / 2;
+    const x2 = t.x;
+    const y2 = t.y + BOX_H / 2;
+    const dx = (x2 - x1) * 0.5;
 
-    // Links
-    const link = g.append("g")
-        .selectAll("line")
-        .data(links)
-        .join("line")
-        .attr("stroke", d => d.color || "rgba(56, 189, 248, 0.3)")
-        .attr("stroke-width", 1.5)
-        .attr("stroke-dasharray", "3,3");
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M ${{x1}} ${{y1}} C ${{x1 + dx}} ${{y1}}, ${{x2 - dx}} ${{y2}}, ${{x2}} ${{y2}}`);
+    path.setAttribute('class', 'conn-line');
+    path.setAttribute('id', `link-${{s.id}}-${{t.id}}`);
+    path.dataset.source = s.id;
+    path.dataset.target = t.id;
+    linksGroup.appendChild(path);
+  }});
 
-    // Node groups
-    const node = g.append("g")
-        .selectAll(".node")
-        .data(nodes)
-        .join("g")
-        .attr("class", "node")
-        .call(d3.drag()
-            .on("start", dragstarted)
-            .on("drag", dragged)
-            .on("end", dragended));
+  nodes.forEach(node => {{
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('transform', `translate(${{node.x}}, ${{node.y}})`);
+    g.setAttribute('id', `group-${{node.id}}`);
 
-    // Glow Circles
-    node.append("circle")
-        .attr("r", d => d.radius + 4)
-        .attr("fill", d => d.color)
-        .attr("opacity", 0.18);
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('width', BOX_W);
+    rect.setAttribute('height', BOX_H);
+    rect.setAttribute('class', 'node-box');
+    rect.setAttribute('id', `rect-${{node.id}}`);
 
-    node.append("circle")
-        .attr("r", d => d.radius)
-        .attr("fill", "#0f172a")
-        .attr("stroke", d => d.color)
-        .attr("stroke-width", 2.2);
+    g.appendChild(rect);
 
-    // Labels
-    node.append("text")
-        .text(d => d.name)
-        .attr("x", 0)
-        .attr("y", d => d.radius + 14)
-        .attr("text-anchor", "middle")
-        .attr("fill", "#cbd5e1")
-        .attr("font-size", "11px")
-        .attr("font-weight", "600")
-        .attr("pointer-events", "none");
+    let textX = 10;
+    if (node.color) {{
+      const sq = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      sq.setAttribute('x', 8);
+      sq.setAttribute('y', 11);
+      sq.setAttribute('width', 8);
+      sq.setAttribute('height', 8);
+      sq.setAttribute('fill', node.color);
+      sq.setAttribute('class', 'sev-mark');
+      g.appendChild(sq);
+      textX = 22;
+    }}
 
-    // Icons
-    node.append("text")
-        .text(d => d.icon)
-        .attr("x", 0)
-        .attr("y", 4)
-        .attr("text-anchor", "middle")
-        .attr("font-size", d => d.radius > 20 ? "14px" : "11px")
-        .attr("pointer-events", "none");
+    const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    txt.setAttribute('x', textX);
+    txt.setAttribute('y', 19);
+    txt.setAttribute('class', 'node-text');
+    txt.textContent = node.label;
+    g.appendChild(txt);
 
-    // Tooltip
-    const tooltip = document.getElementById("tooltip");
-    node.on("mouseover", (event, d) => {{
-        tooltip.style.display = "block";
-        tooltip.innerHTML = `<div style="font-weight:700;color:${{d.color}};margin-bottom:2px;">${{d.icon}} ${{d.name}}</div><div style="font-size:11px;color:#94a3b8;">${{d.desc}}</div>`;
-    }})
-    .on("mousemove", (event) => {{
-        const rect = container.getBoundingClientRect();
-        tooltip.style.left = (event.clientX - rect.left + 15) + "px";
-        tooltip.style.top = (event.clientY - rect.top + 10) + "px";
-    }})
-    .on("mouseout", () => {{
-        tooltip.style.display = "none";
+    g.addEventListener('mouseenter', () => {{
+      highlightConnections(node.id, true);
+    }});
+    g.addEventListener('mouseleave', () => {{
+      highlightConnections(node.id, false);
     }});
 
-    simulation.on("tick", () => {{
-        link
-            .attr("x1", d => d.source.x)
-            .attr("y1", d => d.source.y)
-            .attr("x2", d => d.target.x)
-            .attr("y2", d => d.target.y);
-
-        node
-            .attr("transform", d => `translate(${{d.x}},${{d.y}})`);
+    g.addEventListener('click', () => {{
+      selectNode(node);
     }});
 
-    function dragstarted(event, d) {{
-        if (!event.active) simulation.alphaTarget(0.3).restart();
-        d.fx = d.x;
-        d.fy = d.y;
+    nodesGroup.appendChild(g);
+  }});
+
+  let selectedNodeId = null;
+
+  function highlightConnections(nodeId, enable) {{
+    document.querySelectorAll('.conn-line').forEach(line => {{
+      if (line.dataset.source === nodeId || line.dataset.target === nodeId) {{
+        line.classList.toggle('active', enable);
+      }}
+    }});
+  }}
+
+  function selectNode(node) {{
+    if (selectedNodeId) {{
+      const prev = document.getElementById(`rect-${{selectedNodeId}}`);
+      if (prev) prev.classList.remove('selected');
     }}
-    function dragged(event, d) {{
-        d.fx = event.x;
-        d.fy = event.y;
-    }}
-    function dragended(event, d) {{
-        if (!event.active) simulation.alphaTarget(0);
-        d.fx = null;
-        d.fy = null;
-    }}
-    </script>
-    </body>
-    </html>
-    """
-    return html_code
+    selectedNodeId = node.id;
+    const cur = document.getElementById(`rect-${{node.id}}`);
+    if (cur) cur.classList.add('selected');
+
+    inspTitle.textContent = `${{node.type}}: ${{node.full_name}}`;
+    inspBody.textContent = node.details;
+  }}
+</script>
+
+</body>
+</html>"""
+    return html_content
