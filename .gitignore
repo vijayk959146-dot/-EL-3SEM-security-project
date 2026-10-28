@@ -15,3 +15,9 @@ data/history/
 .idea/
 .vscode/
 *.log
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log

@@ -255,6 +255,109 @@ st.markdown(
         font-weight: 700;
         letter-spacing: 0.03em;
     }
+
+    /* --- Cyber SOC Selectbox & Dropdown Popover Theme --- */
+    /* Selectbox Input Box (Closed State) */
+    div[data-testid="stSelectbox"] label {
+        font-weight: 700 !important;
+        color: #f8fafc !important;
+        font-size: 0.95rem !important;
+        margin-bottom: 0.35rem !important;
+    }
+    div[data-baseweb="select"] > div {
+        background-color: #0f172a !important;
+        border: 1px solid rgba(56, 189, 248, 0.35) !important;
+        border-radius: 10px !important;
+        color: #f8fafc !important;
+        transition: all 0.2s ease-in-out !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+    }
+    div[data-baseweb="select"] > div:hover {
+        border-color: #38bdf8 !important;
+        box-shadow: 0 0 12px rgba(56, 189, 248, 0.25) !important;
+    }
+    div[data-baseweb="select"] > div:focus-within {
+        border-color: #38bdf8 !important;
+        box-shadow: 0 0 14px rgba(56, 189, 248, 0.4) !important;
+    }
+    div[data-baseweb="select"] span,
+    div[data-baseweb="select"] div {
+        color: #f8fafc !important;
+    }
+    div[data-baseweb="select"] svg {
+        fill: #38bdf8 !important;
+    }
+
+    /* Floating Dropdown Popover Container (Opened State) */
+    div[data-baseweb="popover"] {
+        z-index: 9999999 !important;
+        background: transparent !important;
+    }
+    div[data-baseweb="popover"] > div,
+    div[data-baseweb="popover"] [role="listbox"],
+    div[data-baseweb="popover"] [data-baseweb="menu"],
+    ul[data-baseweb="menu"] {
+        background-color: #0b1329 !important;
+        background: linear-gradient(160deg, #0f172a 0%, #070d1e 100%) !important;
+        border: 1px solid rgba(56, 189, 248, 0.45) !important;
+        border-radius: 12px !important;
+        box-shadow: 0 12px 35px rgba(0, 0, 0, 0.85), 0 0 20px rgba(56, 189, 248, 0.2) !important;
+        backdrop-filter: blur(16px) !important;
+        padding: 6px !important;
+        overflow: hidden !important;
+    }
+
+    /* Individual Dropdown Menu Options */
+    div[data-baseweb="popover"] li[role="option"],
+    div[data-baseweb="popover"] [data-baseweb="menu-item"],
+    ul[data-baseweb="menu"] li {
+        background-color: transparent !important;
+        color: #e2e8f0 !important;
+        font-family: 'Outfit', sans-serif !important;
+        font-size: 0.92rem !important;
+        font-weight: 500 !important;
+        border-radius: 8px !important;
+        margin: 2px 0 !important;
+        padding: 8px 14px !important;
+        cursor: pointer !important;
+        transition: all 0.15s ease-in-out !important;
+    }
+
+    /* Option Hover State */
+    div[data-baseweb="popover"] li[role="option"]:hover,
+    div[data-baseweb="popover"] [data-baseweb="menu-item"]:hover,
+    div[data-baseweb="popover"] li[aria-selected="false"]:hover {
+        background: rgba(56, 189, 248, 0.16) !important;
+        color: #38bdf8 !important;
+        font-weight: 700 !important;
+        padding-left: 18px !important;
+    }
+
+    /* Selected Option State */
+    div[data-baseweb="popover"] li[aria-selected="true"],
+    div[data-baseweb="popover"] [data-baseweb="menu-item"][aria-selected="true"],
+    div[data-baseweb="popover"] li[role="option"][aria-selected="true"] {
+        background: linear-gradient(90deg, rgba(56, 189, 248, 0.25) 0%, rgba(30, 58, 138, 0.35) 100%) !important;
+        border: 1px solid rgba(56, 189, 248, 0.45) !important;
+        color: #38bdf8 !important;
+        font-weight: 700 !important;
+    }
+
+    /* Scrollbar for long list of targets */
+    div[data-baseweb="popover"] ::-webkit-scrollbar {
+        width: 6px;
+    }
+    div[data-baseweb="popover"] ::-webkit-scrollbar-track {
+        background: rgba(15, 23, 42, 0.5);
+        border-radius: 4px;
+    }
+    div[data-baseweb="popover"] ::-webkit-scrollbar-thumb {
+        background: rgba(56, 189, 248, 0.4);
+        border-radius: 4px;
+    }
+    div[data-baseweb="popover"] ::-webkit-scrollbar-thumb:hover {
+        background: #38bdf8;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -376,17 +479,31 @@ st.sidebar.markdown(
 )
 
 # Target Selector with Dynamic Workspace Sync
+
 if "active_target" not in st.session_state:
-    st.session_state["active_target"] = "localhost" if "localhost" in available_targets else (available_targets[0] if available_targets else None)
+    st.session_state["active_target"] = (
+        "localhost" if "localhost" in available_targets
+        else (available_targets[0] if available_targets else None)
+    )
+
+# Consume any pending workspace switch set by scan callbacks on the previous run.
+# This block MUST run before the selectbox is instantiated so that writing
+# st.session_state["target_workspace_select"] is legal (widget not yet drawn).
+pending = st.session_state.pop("pending_target", None)
+if pending:
+    st.session_state["active_target"] = pending
+    if pending in available_targets:
+        st.session_state["target_workspace_select"] = pending
 
 selected_target: str | None = None
 if available_targets:
-    target_idx = 0
-    if st.session_state.get("active_target") in available_targets:
-        target_idx = available_targets.index(st.session_state["active_target"])
-    elif "localhost" in available_targets:
-        target_idx = available_targets.index("localhost")
-    selected_target = st.sidebar.selectbox("🎯 Target Workspace", available_targets, index=target_idx, key="target_workspace_select")
+    if st.session_state.get("active_target") not in available_targets:
+        st.session_state["active_target"] = available_targets[0]
+    if "target_workspace_select" not in st.session_state or \
+            st.session_state["target_workspace_select"] not in available_targets:
+        st.session_state["target_workspace_select"] = st.session_state["active_target"]
+    selected_target = st.sidebar.selectbox(
+        "🎯 Target Workspace", available_targets, key="target_workspace_select")
     st.session_state["active_target"] = selected_target
 else:
     st.sidebar.caption("No target reports detected yet.")
@@ -404,6 +521,7 @@ with st.sidebar.expander("🚀 Run New Scan / Assessment", expanded=False):
             st.error("Please specify a target domain or IP.")
         else:
             with st.spinner(f"Running defensive pipeline against {target_name}..."):
+                scan_ok = False
                 try:
                     scan_request = build_scan_request(
                         target_name,
@@ -412,16 +530,17 @@ with st.sidebar.expander("🚀 Run New Scan / Assessment", expanded=False):
                         requested_by="streamlit-dashboard",
                     )
                     scan_result = run_scan(scan_request)
-                    st.session_state["active_target"] = scan_result.target
-                    st.session_state["target_workspace_select"] = scan_result.target
+                    st.session_state["pending_target"] = scan_result.target
                     st.success(
                         f"Assessment completed for {scan_result.target} "
                         f"({scan_result.mode}, {scan_result.finding_count} finding(s))."
                     )
-                    _time.sleep(1)
-                    st.rerun()
+                    scan_ok = True
                 except Exception as ex:
                     st.error(f"Scan failed: {ex}")
+            if scan_ok:
+                _time.sleep(1)
+                st.rerun()
 
 
 def _load_report(target: str | None = None) -> dict[str, Any]:
@@ -575,8 +694,7 @@ if not report or not report.get("findings"):
         if st.button("⚡ Run Instant Localhost Scan", use_container_width=True, type="primary"):
             with st.spinner("Executing defensive pipeline for localhost..."):
                 scan_result = run_scan(build_scan_request("localhost", DEFAULT_PORTS, force_passive=False))
-                st.session_state["active_target"] = scan_result.target
-                st.session_state["target_workspace_select"] = scan_result.target
+                st.session_state["pending_target"] = scan_result.target
                 st.success("Localhost scan complete!")
                 _time.sleep(1)
                 st.rerun()
@@ -584,8 +702,7 @@ if not report or not report.get("findings"):
         if st.button("🌐 Run Passive OSINT on example.com", use_container_width=True):
             with st.spinner("Gathering passive intelligence for example.com..."):
                 scan_result = run_scan(build_scan_request("example.com", DEFAULT_PORTS, force_passive=True))
-                st.session_state["active_target"] = scan_result.target
-                st.session_state["target_workspace_select"] = scan_result.target
+                st.session_state["pending_target"] = scan_result.target
                 st.success("Passive OSINT scan complete!")
                 _time.sleep(1)
                 st.rerun()
