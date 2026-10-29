@@ -1,7 +1,6 @@
 """
-Summary Section: Field Review Executive Overview.
-Includes deterministic verdict, compact figures row (severity stacked bar, mode, date, delta),
-and prioritized 'Do These First' action ledger.
+Summary Section: Enterprise Security Posture & Exposure Overview.
+Includes deterministic posture assessment, KPI metrics row, and prioritized remediation queue.
 """
 
 from __future__ import annotations
@@ -17,17 +16,17 @@ def render_summary_section(
     diff_data: dict[str, Any] | None = None,
     history_files: list[Any] | None = None,
 ) -> None:
-    """Render the executive summary overview."""
+    """Render the executive security posture overview."""
     findings = report.get("findings") or []
     target = report.get("target") or "Target"
     mode = str(report.get("mode") or "passive").upper()
 
-    # 1. Deterministic Executive Verdict
+    # 1. Deterministic Security Posture Overview
     verdict_text = generate_verdict_text(report)
     st.markdown(
         f"""
         <div class="verdict-box">
-            <div class="verdict-label">Executive Assessment Verdict</div>
+            <div class="verdict-label">Security Posture Assessment</div>
             <p class="verdict-text">{esc(verdict_text)}</p>
         </div>
         """,
@@ -36,14 +35,17 @@ def render_summary_section(
 
     # Compute Severity Counts
     counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+    kev_count = 0
     for f in findings:
         cls = severity_class(f.get("severity", "info"))
         counts[cls] += 1
+        exploit = str(f.get("exploitability") or "").lower()
+        if "kev" in exploit or "cisa" in exploit:
+            kev_count += 1
 
     total = len(findings)
 
-    # 2. Compact Row of 4 Small Figures
-    # A) Stacked bar percentages
+    # 2. Compact Row of 4 KPI Metric Cards
     if total > 0:
         crit_pct = (counts["critical"] / total) * 100
         high_pct = (counts["high"] / total) * 100
@@ -64,7 +66,7 @@ def render_summary_section(
     </div>
     """
 
-    # B) Date of run
+    # Assessment timestamp
     date_str = str(report.get("timestamp") or report.get("created_at") or "Current session")
     if "T" in date_str and len(date_str) >= 16:
         try:
@@ -72,11 +74,11 @@ def render_summary_section(
         except Exception:
             pass
 
-    # C) Delta vs previous run
+    # Drift vs previous scan
     if diff_data:
         new_cnt = len(diff_data.get("new", []))
         res_cnt = len(diff_data.get("resolved", []))
-        delta_str = f"+{new_cnt} new, -{res_cnt} resolved"
+        delta_str = f"+{new_cnt} new, -{res_cnt} fixed"
         delta_sub = f"{len(diff_data.get('unchanged', []))} persisting"
     elif history_files and len(history_files) > 1:
         delta_str = "Comparison available"
@@ -89,11 +91,21 @@ def render_summary_section(
         f"""
         <div class="figures-row">
             <div class="figure-cell">
-                <div class="figure-label">Findings by Severity</div>
-                <div class="figure-val tabular-nums">{total} <span style="font-size:13px;font-weight:400;color:var(--text-muted);">total</span></div>
+                <div class="figure-label">Total Findings</div>
+                <div class="figure-val tabular-nums">{total} <span style="font-size:13px;font-weight:500;color:var(--text-muted);">detected</span></div>
                 {stacked_bar_html}
                 <div class="figure-sub tabular-nums">
                     C:{counts['critical']} &middot; H:{counts['high']} &middot; M:{counts['medium']} &middot; L:{counts['low']} &middot; I:{counts['info']}
+                </div>
+            </div>
+
+            <div class="figure-cell">
+                <div class="figure-label">Exploit Threat</div>
+                <div class="figure-val tabular-nums" style="color: {'var(--sev-crit)' if (counts['critical'] + counts['high']) > 0 else 'var(--text-ink)'};">
+                    {counts['critical'] + counts['high']} <span style="font-size:13px;font-weight:500;color:var(--text-muted);">High / Crit</span>
+                </div>
+                <div class="figure-sub">
+                    {'⚠️ ' + str(kev_count) + ' listed in CISA KEV' if kev_count > 0 else 'No active KEV exploits found'}
                 </div>
             </div>
 
@@ -106,14 +118,8 @@ def render_summary_section(
             </div>
 
             <div class="figure-cell">
-                <div class="figure-label">Assessment Date</div>
-                <div class="figure-val" style="font-size:16px;font-family:var(--font-mono);">{esc(date_str)}</div>
-                <div class="figure-sub">Standard report retention</div>
-            </div>
-
-            <div class="figure-cell">
-                <div class="figure-label">Historical Drift</div>
-                <div class="figure-val" style="font-size:16px;">{esc(delta_str)}</div>
+                <div class="figure-label">Perimeter Drift</div>
+                <div class="figure-val" style="font-size:18px;">{esc(delta_str)}</div>
                 <div class="figure-sub">{esc(delta_sub)}</div>
             </div>
         </div>
@@ -121,13 +127,13 @@ def render_summary_section(
         unsafe_allow_html=True,
     )
 
-    # 3. 'Do These First' Action Plan
-    st.markdown("### Do these first")
-    st.caption("Highest-priority exposures ranked by exploitability and impact.")
+    # 3. Priority Remediation Queue
+    st.markdown("### Priority Remediation Queue")
+    st.caption("Top security exposures ranked by exploitability, asset exposure, and impact.")
 
     top_3 = findings[:3]
     if not top_3:
-        st.info("No actionable findings recorded. Surface conforms to standard configuration.")
+        st.info("No actionable exposures recorded. Target perimeter conforms to standard configuration.")
         return
 
     for idx, f in enumerate(top_3):
@@ -144,15 +150,15 @@ def render_summary_section(
         with col_act:
             st.markdown(
                 f"""
-                <div style="border-bottom: 1px solid var(--border-hairline); padding: 12px 0;">
-                    <div style="display:flex; align-items:center; gap: 10px; margin-bottom: 4px;">
-                        <span class="font-mono" style="font-size:12px; color:var(--text-muted); font-weight:600;">#{rank}</span>
+                <div class="action-card">
+                    <div style="display:flex; align-items:center; gap: 10px; margin-bottom: 6px; flex-wrap:wrap;">
+                        <span class="font-mono" style="font-size:12px; color:var(--text-muted); font-weight:700;">#{rank}</span>
                         {sev_mark}
-                        <strong style="color:var(--text-ink); font-size:15px;">{esc(title)}</strong>
+                        <strong style="color:var(--text-ink); font-size:14px;">{esc(title)}</strong>
                         {cve_tag}
                     </div>
-                    <div style="font-size:13px; color:var(--text-muted); padding-left: 24px;">
-                        <span style="font-weight:600; color:var(--accent);">Action:</span> {esc(action)}
+                    <div style="font-size:13px; color:var(--text-muted);">
+                        <span style="font-weight:600; color:var(--accent);">Suggested Action:</span> {esc(action)}
                     </div>
                 </div>
                 """,

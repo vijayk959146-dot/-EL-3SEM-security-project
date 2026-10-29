@@ -50,9 +50,9 @@ def render_fixes_section(
     if matched_finding:
         st.markdown(
             f"""
-            <div style="border:1px solid var(--border-hairline); border-left:3px solid var(--accent); background:var(--bg-surface); padding:12px 16px; margin-bottom:16px;">
-                <div style="font-family:var(--font-mono); font-size:11px; text-transform:uppercase; color:var(--accent);">Scoped to Selected Finding</div>
-                <div style="font-weight:600; font-size:15px; margin-top:2px;">#{matched_finding.get('rank')} &mdash; {esc(matched_finding.get('title'))}</div>
+            <div style="border:1px solid var(--border-hairline); border-left:4px solid var(--accent); border-radius:var(--radius-md); background:var(--bg-surface); padding:14px 18px; margin-bottom:16px; box-shadow:var(--shadow-sm);">
+                <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--accent);">Scoped to Selected Finding</div>
+                <div style="font-weight:600; font-size:15px; margin-top:2px; color:var(--text-ink);">#{matched_finding.get('rank')} &mdash; {esc(matched_finding.get('title'))}</div>
                 <div style="font-size:13px; color:var(--text-muted); margin-top:4px;">Action: {esc(matched_finding.get('suggested_action'))}</div>
             </div>
             """,
@@ -140,7 +140,7 @@ def render_fixes_section(
 
         st.markdown(
             f"""
-            <div style="font-size:14px; color:var(--text-muted); background:var(--bg-subtle); padding:12px 16px; border:1px solid var(--border-hairline);">
+            <div style="font-size:14px; color:var(--text-muted); background:var(--bg-subtle); padding:12px 16px; border:1px solid var(--border-hairline); border-radius:var(--radius-md);">
                 Applying this configuration resolves <strong>{len(scope_findings)}</strong> finding(s).
                 Threat index decreases from <span class="tabular-nums font-mono">{old_score}/100</span> to 
                 <span class="tabular-nums font-mono" style="color:var(--accent); font-weight:600;">{new_score}/100</span> 
@@ -193,6 +193,18 @@ def render_fixes_section(
         if "simulated_patches" not in st.session_state:
             st.session_state.simulated_patches = set()
 
+        # One-click bulk simulation controls
+        col_btn_all, col_btn_rst, _ = st.columns([1.5, 1.2, 2])
+        with col_btn_all:
+            if st.button("⚡ Patch All Issues", use_container_width=True, type="primary"):
+                for idx, f in enumerate(findings):
+                    st.session_state.simulated_patches.add(f"sim_box_{f.get('rank', idx + 1)}_{idx}")
+                st.rerun()
+        with col_btn_rst:
+            if st.button("↺ Reset All", use_container_width=True):
+                st.session_state.simulated_patches.clear()
+                st.rerun()
+
         sim_c1, sim_c2 = st.columns([3, 2])
 
         with sim_c1:
@@ -234,8 +246,8 @@ def render_fixes_section(
 
             st.markdown(
                 f"""
-                <div style="border:1px solid var(--border-hairline); background:var(--bg-surface); padding:20px; text-align:center;">
-                    <div style="font-family:var(--font-mono); font-size:11px; text-transform:uppercase; color:var(--text-muted);">Simulated Threat Index</div>
+                <div style="border:1px solid var(--border-hairline); border-radius:var(--radius-md); background:var(--bg-surface); padding:20px; text-align:center; box-shadow:var(--shadow-sm);">
+                    <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--text-muted);">Simulated Threat Index</div>
                     <div style="font-family:var(--font-sans); font-size:36px; font-weight:700; color:var(--text-ink); margin:8px 0;" class="tabular-nums">
                         {sim_risk}/100
                     </div>

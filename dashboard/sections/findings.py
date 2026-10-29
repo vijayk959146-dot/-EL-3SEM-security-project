@@ -1,7 +1,7 @@
 """
-Findings Section: The Triage Ledger.
-Dense, table-like finding list with inline expansion, hairline separators,
-and restrained severity indicators.
+Findings Section: Vulnerability & Exposure Ledger.
+Table-like finding inventory with inline expansion, severity badges,
+and direct remediation routing.
 """
 
 from __future__ import annotations
@@ -15,16 +15,16 @@ from correlation.compliance import map_compliance
 
 
 def render_findings_section(report: dict[str, Any]) -> None:
-    """Render the triage ledger finding browser."""
+    """Render the vulnerability and exposure ledger."""
     raw_findings = report.get("findings") or []
     target = report.get("target") or "Target"
 
     if not raw_findings:
         st.markdown(
             """
-            <div style="border:1px solid var(--border-hairline); padding:32px; text-align:center; background:var(--bg-surface); margin:24px 0;">
-                <p style="font-family:var(--font-serif); font-size:18px; margin-bottom:8px; color:var(--text-ink);">
-                    No findings recorded for this target workspace.
+            <div style="border:1px solid var(--border-hairline); border-radius:var(--radius-md); padding:32px; text-align:center; background:var(--bg-surface); margin:24px 0;">
+                <p style="font-size:16px; font-weight:600; margin-bottom:8px; color:var(--text-ink);">
+                    No security exposures identified
                 </p>
                 <p style="font-size:13px; color:var(--text-muted); margin:0;">
                     Execute an active probe or passive OSINT scan to inspect attack surface exposures.
@@ -41,8 +41,8 @@ def render_findings_section(report: dict[str, Any]) -> None:
     comp_data = map_compliance(raw_findings)
     cat_summary = comp_data.get("categories", {})
 
-    st.markdown("### Triage Ledger")
-    st.caption("Prioritized index of confirmed security exposures, transport flaws, and CVE correlations.")
+    st.markdown("### Vulnerability & Exposure Ledger")
+    st.caption("Prioritized inventory of confirmed security findings, transport weaknesses, and CVE correlations.")
 
     # 1. Filters & Sort Controls
     f_col1, f_col2, f_col3, f_col4 = st.columns([3, 2, 2, 2])
@@ -126,7 +126,7 @@ def render_findings_section(report: dict[str, Any]) -> None:
         filtered.sort(key=lambda x: int(x.get("rank") or 999))
 
     st.markdown(
-        f"<div style='font-family:var(--font-mono); font-size:12px; color:var(--text-subtle); margin:12px 0 8px 0;'>"
+        f"<div style='font-size:12px; font-weight:500; color:var(--text-subtle); margin:12px 0 8px 0;'>"
         f"Showing {len(filtered)} of {len(raw_findings)} findings"
         f"</div>",
         unsafe_allow_html=True,
@@ -135,7 +135,7 @@ def render_findings_section(report: dict[str, Any]) -> None:
     if not filtered:
         st.markdown(
             """
-            <div style="border:1px solid var(--border-hairline); padding:24px; text-align:center; background:var(--bg-surface);">
+            <div style="border:1px solid var(--border-hairline); border-radius:var(--radius-md); padding:24px; text-align:center; background:var(--bg-surface);">
                 <p style="font-size:14px; color:var(--text-muted); margin:0;">
                     No findings match the selected filter criteria.
                 </p>
@@ -151,28 +151,27 @@ def render_findings_section(report: dict[str, Any]) -> None:
         sev = str(f.get("severity", "Info")).capitalize()
         title = str(f.get("title", "Untitled finding"))
         cves = f.get("related_cves") or []
-        cve_str = ", ".join(cves) if cves else "None"
+        cve_str = ", ".join(cves) if cves else "No CVE"
         exploit = str(f.get("exploitability") or "Standard")
         source = str(f.get("source") or "nvd")
         why = str(f.get("why_it_matters") or "Configuration increases target attack surface exposure.")
         action = str(f.get("suggested_action") or "Apply hardening configuration or security updates.")
 
         # Finding summary header string for expander
-        expander_title = f"#{rank}  [{sev.upper()}]  {title}  |  {cve_str}  |  {exploit}"
+        expander_title = f"#{rank}  [{sev.upper()}]  {title}  ·  {cve_str}  ·  {exploit}"
 
         with st.expander(expander_title, expanded=False):
-            # Render structured detail ledger card inside expander
             c1, c2 = st.columns([3, 1])
             with c1:
                 st.markdown(
                     f"""
-                    <div style="font-size:14px; margin-bottom:12px;">
-                        <div style="font-weight:600; color:var(--text-ink); margin-bottom:4px;">Why it matters:</div>
+                    <div style="font-size:13px; margin-bottom:12px;">
+                        <div style="font-weight:600; color:var(--text-ink); margin-bottom:4px;">Threat & Exploit Analysis:</div>
                         <div style="color:var(--text-muted); line-height:1.5;">{esc(why)}</div>
                     </div>
-                    <div style="font-size:14px; margin-bottom:14px;">
-                        <div style="font-weight:600; color:var(--text-ink); margin-bottom:4px;">Suggested Action:</div>
-                        <div style="color:var(--text-ink); line-height:1.5;">{esc(action)}</div>
+                    <div style="font-size:13px; margin-bottom:14px;">
+                        <div style="font-weight:600; color:var(--text-ink); margin-bottom:4px;">Recommended Remediation:</div>
+                        <div style="color:var(--text-ink); line-height:1.5; font-weight:500;">{esc(action)}</div>
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -182,17 +181,16 @@ def render_findings_section(report: dict[str, Any]) -> None:
                 if cves:
                     cve_links = []
                     for c in cves:
-                        cve_links.append(f'<a href="https://nvd.nist.gov/vuln/detail/{esc(c)}" target="_blank" style="color:var(--accent); text-decoration:none; font-family:var(--font-mono); font-size:12px; margin-right:8px;">{esc(c)} &nearr;</a>')
+                        cve_links.append(f'<a href="https://nvd.nist.gov/vuln/detail/{esc(c)}" target="_blank" style="color:var(--accent); text-decoration:none; font-family:var(--font-mono); font-size:12px; margin-right:8px; font-weight:500;">{esc(c)} &nearr;</a>')
                     st.markdown("<div>" + "".join(cve_links) + "</div>", unsafe_allow_html=True)
 
                 # Regulatory & Threat tags
                 tags = []
-                # Check MITRE technique
                 m_info = mitre_mapping.get(f.get("id")) or mitre_mapping.get(title)
                 if m_info:
                     tags.append(f'<span class="mark-tag font-mono">MITRE: {esc(m_info.get("technique_id"))} {esc(m_info.get("technique_name"))}</span>')
-                tags.append(f'<span class="mark-tag font-mono">SOURCE: {esc(source)}</span>')
-                tags.append(f'<span class="mark-tag font-mono">EXPLOIT: {esc(exploit)}</span>')
+                tags.append(f'<span class="mark-tag font-mono">SOURCE: {esc(source.upper())}</span>')
+                tags.append(f'<span class="mark-tag font-mono">EXPLOIT: {esc(exploit.upper())}</span>')
 
                 st.markdown(
                     "<div style='display:flex; gap:6px; flex-wrap:wrap; margin-top:12px;'>"
@@ -205,10 +203,10 @@ def render_findings_section(report: dict[str, Any]) -> None:
                 st.markdown(
                     f"""
                     <div style="border-left:1px solid var(--border-hairline); padding-left:16px;">
-                        <div style="font-family:var(--font-mono); font-size:11px; text-transform:uppercase; color:var(--text-subtle); margin-bottom:6px;">Finding Details</div>
-                        <div style="font-family:var(--font-mono); font-size:12px; margin-bottom:4px;">Rank: #{rank}</div>
-                        <div style="font-family:var(--font-mono); font-size:12px; margin-bottom:4px;">Severity: {esc(sev)}</div>
-                        <div style="font-family:var(--font-mono); font-size:12px; margin-bottom:12px;">Origin: {esc(source)}</div>
+                        <div style="font-size:11px; text-transform:uppercase; font-weight:700; color:var(--text-subtle); margin-bottom:6px;">Finding Metadata</div>
+                        <div style="font-size:12px; margin-bottom:4px;">Rank: <strong>#{rank}</strong></div>
+                        <div style="font-size:12px; margin-bottom:4px;">Severity: <strong>{esc(sev)}</strong></div>
+                        <div style="font-size:12px; margin-bottom:12px;">Origin: <strong>{esc(source.upper())}</strong></div>
                     </div>
                     """,
                     unsafe_allow_html=True,

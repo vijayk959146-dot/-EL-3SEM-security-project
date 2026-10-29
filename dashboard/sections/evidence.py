@@ -40,14 +40,14 @@ def render_evidence_section(
 
         st.markdown(
             f"""
-            <div style="display:flex; justify-content:space-between; align-items:center; border:1px solid var(--border-hairline); padding:16px 20px; background:var(--bg-surface); margin-bottom:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border:1px solid var(--border-hairline); border-radius:var(--radius-md); padding:16px 20px; background:var(--bg-surface); margin-bottom:20px; box-shadow:var(--shadow-sm);">
                 <div>
-                    <div style="font-family:var(--font-mono); font-size:11px; text-transform:uppercase; color:var(--text-muted);">Overall Security Grade</div>
-                    <div style="font-size:28px; font-weight:700; font-family:var(--font-serif);">{comp_data['grade']} &mdash; {comp_data['posture']}</div>
+                    <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--text-muted);">Overall Security Grade</div>
+                    <div style="font-size:26px; font-weight:700; font-family:var(--font-sans);">{comp_data['grade']} &mdash; {comp_data['posture']}</div>
                 </div>
                 <div style="text-align:right;">
-                    <div style="font-family:var(--font-mono); font-size:11px; text-transform:uppercase; color:var(--text-muted);">Compliance Score</div>
-                    <div style="font-size:24px; font-family:var(--font-mono); font-weight:600;" class="tabular-nums">{comp_data['score']}%</div>
+                    <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--text-muted);">Compliance Score</div>
+                    <div style="font-size:24px; font-family:var(--font-mono); font-weight:700; color:var(--accent);" class="tabular-nums">{comp_data['score']}%</div>
                 </div>
             </div>
             """,

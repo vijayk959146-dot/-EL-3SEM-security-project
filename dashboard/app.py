@@ -40,7 +40,8 @@ from dashboard.sections.copilot import render_copilot_panel
 
 # --- 1. Page Configuration ---
 st.set_page_config(
-    page_title="Surface Review",
+    page_title="SecOps Attack Surface Console",
+    page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -160,9 +161,12 @@ available_targets = _discover_available_targets()
 # Sidebar Brand Heading
 st.sidebar.markdown(
     """
-    <div style="border-bottom: 1px solid var(--border-hairline); padding-bottom: 12px; margin-bottom: 16px;">
-        <h2 style="font-size: 20px; margin: 0; font-family: var(--font-serif); font-weight: 600;">Surface Review</h2>
-        <p style="font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); margin: 2px 0 0 0; text-transform: uppercase; letter-spacing: 0.05em;">Attack surface assessment</p>
+    <div class="sidebar-brand">
+        <div class="brand-icon">🛡️</div>
+        <div class="brand-text">
+            <div class="brand-title">SecOps Surface</div>
+            <div class="brand-subtitle">Vulnerability & EASM Console</div>
+        </div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -351,7 +355,7 @@ if "active_section" not in st.session_state:
 current_nav_idx = SECTIONS.index(st.session_state["active_section"]) if st.session_state["active_section"] in SECTIONS else 0
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("<div style='font-family:var(--font-mono); font-size:11px; text-transform:uppercase; color:var(--text-subtle); margin-bottom:4px;'>Report Navigation</div>", unsafe_allow_html=True)
+st.sidebar.markdown("<div style='font-size:11px; font-weight:700; text-transform:uppercase; color:var(--text-subtle); margin-bottom:6px; letter-spacing:0.05em;'>Console Navigation</div>", unsafe_allow_html=True)
 nav_selection = st.sidebar.radio(
     "Report Sections",
     SECTIONS,
@@ -367,15 +371,15 @@ render_copilot_panel(report, in_sidebar=True)
 # Sidebar footer status
 st.sidebar.markdown("---")
 auth_status_text = "Password Protected" if DASHBOARD_PASSWORD else "Public Access"
-st.sidebar.caption(f"Status: {auth_status_text} | Surface Review v2.0")
+st.sidebar.caption(f"Status: {auth_status_text} | SecOps Surface v2.4")
 
 
 # --- 8. Empty State Guard ---
 if not report or not report.get("findings"):
     st.markdown(
         """
-        <div style="border: 1px solid var(--border-hairline); background: var(--bg-surface); padding: 48px 32px; text-align: center; margin: 32px 0;">
-            <h2 style="font-family: var(--font-serif); font-size: 24px; margin: 0 0 12px 0;">No assessment report loaded</h2>
+        <div style="border: 1px solid var(--border-hairline); border-radius: var(--radius-md); background: var(--bg-surface); padding: 48px 32px; text-align: center; margin: 32px 0; box-shadow: var(--shadow-sm);">
+            <h2 style="font-size: 22px; margin: 0 0 10px 0;">No Assessment Report Loaded</h2>
             <p style="color: var(--text-muted); max-width: 560px; margin: 0 auto 24px auto; font-size: 14px; line-height: 1.5;">
                 Select an existing target from the sidebar, run a scan against localhost, or initiate a passive OSINT assessment on an external domain.
             </p>

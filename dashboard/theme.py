@@ -1,6 +1,7 @@
 """
-Theme injector for Field Report design system.
+Theme injector for Modern Enterprise SecOps design system.
 Loads dashboard/theme.css and manages light/dark mode tokens.
+Replaces AI-like retro-paper / serif styling with clean, production cybersecurity SaaS tokens.
 """
 
 from __future__ import annotations
@@ -12,41 +13,41 @@ import streamlit as st
 THEME_CSS_PATH = Path(__file__).resolve().parent / "theme.css"
 
 LIGHT_TOKENS = {
-    "bg_app": "#F6F3EC",
+    "bg_app": "#F8FAFC",
     "bg_surface": "#FFFFFF",
-    "bg_subtle": "#EFECE4",
-    "bg_hover": "#E7E3D8",
-    "text_ink": "#1B1B1B",
-    "text_muted": "#5C5A55",
-    "text_subtle": "#8C887F",
-    "border_hairline": "#D9D4C7",
-    "border_strong": "#BCB6A6",
-    "accent": "#D8431F",
-    "accent_subtle": "#FBECE8",
-    "accent_hover": "#BF360C",
-    "sev_crit": "#991B1B",
-    "sev_high": "#C2410C",
-    "sev_med": "#B45309",
+    "bg_subtle": "#F1F5F9",
+    "bg_hover": "#E2E8F0",
+    "text_ink": "#0F172A",
+    "text_muted": "#475569",
+    "text_subtle": "#94A3B8",
+    "border_hairline": "#E2E8F0",
+    "border_strong": "#CBD5E1",
+    "accent": "#2563EB",
+    "accent_subtle": "#EFF6FF",
+    "accent_hover": "#1D4ED8",
+    "sev_crit": "#DC2626",
+    "sev_high": "#EA580C",
+    "sev_med": "#D97706",
     "sev_low": "#2563EB",
     "sev_info": "#64748B",
 }
 
 DARK_TOKENS = {
-    "bg_app": "#16171A",
-    "bg_surface": "#1E2024",
-    "bg_subtle": "#26282E",
-    "bg_hover": "#2F323A",
-    "text_ink": "#E5E5E5",
-    "text_muted": "#A3A3A3",
-    "text_subtle": "#737373",
-    "border_hairline": "#2C2D32",
-    "border_strong": "#3F4148",
-    "accent": "#E0532E",
-    "accent_subtle": "#2A1C19",
-    "accent_hover": "#FF6B47",
-    "sev_crit": "#DC2626",
-    "sev_high": "#EA580C",
-    "sev_med": "#D97706",
+    "bg_app": "#0B0F19",
+    "bg_surface": "#111827",
+    "bg_subtle": "#1F2937",
+    "bg_hover": "#374151",
+    "text_ink": "#F9FAFB",
+    "text_muted": "#9CA3AF",
+    "text_subtle": "#6B7280",
+    "border_hairline": "#1F2937",
+    "border_strong": "#374151",
+    "accent": "#3B82F6",
+    "accent_subtle": "#1E3A8A33",
+    "accent_hover": "#60A5FA",
+    "sev_crit": "#EF4444",
+    "sev_high": "#F97316",
+    "sev_med": "#F59E0B",
     "sev_low": "#60A5FA",
     "sev_info": "#94A3B8",
 }
@@ -97,16 +98,6 @@ def apply_theme(mode: str = "light") -> None:
         [data-testid="stSidebar"] {{
           background-color: {tokens['bg_subtle']} !important;
           border-right-color: {tokens['border_hairline']} !important;
-        }}
-        div[data-baseweb="select"] > div,
-        div[data-baseweb="input"] > div {{
-          background-color: {tokens['bg_surface']} !important;
-          color: {tokens['text_ink']} !important;
-          border-color: {tokens['border_hairline']} !important;
-        }}
-        [data-testid="stExpander"] {{
-          background-color: {tokens['bg_surface']} !important;
-          border-color: {tokens['border_hairline']} !important;
         }}
         </style>
         """

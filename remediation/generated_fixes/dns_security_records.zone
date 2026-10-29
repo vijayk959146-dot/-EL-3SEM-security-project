@@ -1,0 +1,19 @@
+; ========================================================
+; DNS EMAIL SECURITY & SPOOFING DEFENSE RECORDS
+; Add these TXT and CAA records to your DNS zone file or registrar
+; ========================================================
+
+; 1. SPF (Sender Policy Framework) - Protects against unauthorized email senders
+@    IN    TXT    "v=spf1 include:_spf.google.com ~all"
+
+; (If this domain sends NO email at all, use this strict null SPF record instead):
+; @    IN    TXT    "v=spf1 -all"
+
+; 2. DMARC (Domain-based Message Authentication, Reporting, and Conformance)
+; Enforces quarantine/reject on spoofed emails and sends daily telemetry
+_dmarc    IN    TXT    "v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s; pct=100; rua=mailto:dmarc-reports@yourdomain.com"
+
+; 3. CAA (Certificate Authority Authorization) - Prevents unauthorized SSL cert issuance
+@    IN    CAA    0 issue "letsencrypt.org"
+@    IN    CAA    0 issue "digicert.com"
+@    IN    CAA    0 iodef "mailto:security@yourdomain.com"

@@ -1,0 +1,72 @@
+{
+  "WebACL": {
+    "Name": "WAF-Production-Defense-Shield",
+    "Scope": "REGIONAL",
+    "DefaultAction": {
+      "Allow": {}
+    },
+    "Description": "Automated Defensive WAF Shield to block scanners, RCE, and bad inputs",
+    "Rules": [
+      {
+        "Name": "EnforceSecurityHeadersAndMitigation",
+        "Priority": 1,
+        "Statement": {
+          "ManagedRuleGroupStatement": {
+            "VendorName": "AWS",
+            "Name": "AWSManagedRulesCommonRuleSet",
+            "ExcludedRules": []
+          }
+        },
+        "OverrideAction": {
+          "None": {}
+        },
+        "VisibilityConfig": {
+          "SampledRequestsEnabled": true,
+          "CloudWatchMetricsEnabled": true,
+          "MetricName": "AWSCommonRulesMetric"
+        }
+      },
+      {
+        "Name": "BlockKnownExploitScanners",
+        "Priority": 2,
+        "Statement": {
+          "ManagedRuleGroupStatement": {
+            "VendorName": "AWS",
+            "Name": "AWSManagedRulesKnownBadInputsRuleSet"
+          }
+        },
+        "OverrideAction": {
+          "None": {}
+        },
+        "VisibilityConfig": {
+          "SampledRequestsEnabled": true,
+          "CloudWatchMetricsEnabled": true,
+          "MetricName": "BadInputsMetric"
+        }
+      },
+      {
+        "Name": "RateLimitShield",
+        "Priority": 3,
+        "Statement": {
+          "RateBasedStatement": {
+            "Limit": 2000,
+            "AggregateKeyType": "IP"
+          }
+        },
+        "Action": {
+          "Block": {}
+        },
+        "VisibilityConfig": {
+          "SampledRequestsEnabled": true,
+          "CloudWatchMetricsEnabled": true,
+          "MetricName": "RateLimitExceeded"
+        }
+      }
+    ],
+    "VisibilityConfig": {
+      "SampledRequestsEnabled": true,
+      "CloudWatchMetricsEnabled": true,
+      "MetricName": "WebACLOverview"
+    }
+  }
+}

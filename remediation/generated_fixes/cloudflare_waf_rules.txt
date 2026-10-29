@@ -1,0 +1,19 @@
+# ========================================================
+# CLOUDFLARE WAF DEFENSIVE CUSTOM EXPRESSIONS
+# Copy and paste into: Cloudflare Dashboard -> Security -> WAF -> Custom Rules
+# ========================================================
+
+# Rule 1: Block Vulnerability Scanners & Reconnaissance Bots
+Expression:
+(http.user_agent contains "nikto" or http.user_agent contains "sqlmap" or http.user_agent contains "nmap" or http.user_agent contains "masscan" or http.user_agent contains "dirbuster" or http.user_agent contains "gobuster")
+Action: Block
+
+# Rule 2: Shield Sensitive Config Files, Git Repositories & Admin Panels
+Expression:
+(http.request.uri.path contains "/.env" or http.request.uri.path contains "/.git" or http.request.uri.path contains "/wp-admin" or http.request.uri.path contains "/phpmyadmin" or http.request.uri.path contains "/config.json")
+Action: Block
+
+# Rule 3: Enforce Minimum TLS & Drop Obsolete Insecure Cipher Clients
+Expression:
+(ssl.protocol eq "TLSv1" or ssl.protocol eq "TLSv1.1")
+Action: Block

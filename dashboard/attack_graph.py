@@ -1,8 +1,8 @@
 """
 Field Report Exposure Diagram Component.
-Renders a flat, layered left-to-right architectural mapping:
+Renders a clean, layered left-to-right architectural mapping:
 Target -> IPs -> Open Ports / Services -> Findings.
-Thin 1px connectors, monospace labels, severity squares, zero neon, theme-aware.
+Modern sans-serif typography, rounded nodes, theme-aware palette.
 """
 
 from __future__ import annotations
@@ -172,7 +172,7 @@ def render_attack_surface_graph_html(
   body {{
     background-color: {tokens['bg_surface']};
     color: {tokens['text_ink']};
-    font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 13px;
     line-height: 1.4;
     overflow-x: hidden;
@@ -180,9 +180,11 @@ def render_attack_surface_graph_html(
   .exposure-wrap {{
     display: flex;
     border: 1px solid {tokens['border_hairline']};
-    border-radius: 3px;
+    border-radius: 8px;
     background: {tokens['bg_surface']};
     min-height: {total_height}px;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+    overflow: hidden;
   }}
   .diagram-pane {{
     flex: 1;
@@ -191,7 +193,7 @@ def render_attack_surface_graph_html(
     padding: 10px 0;
   }}
   .inspector-pane {{
-    width: 280px;
+    width: 290px;
     border-left: 1px solid {tokens['border_hairline']};
     background: {tokens['bg_subtle']};
     padding: 16px;
@@ -200,11 +202,11 @@ def render_attack_surface_graph_html(
     justify-content: space-between;
   }}
   .inspector-header {{
-    font-family: 'IBM Plex Mono', monospace;
     font-size: 11px;
+    font-weight: 700;
     text-transform: uppercase;
-    color: {tokens['text_muted']};
-    letter-spacing: 0.06em;
+    color: {tokens['accent']};
+    letter-spacing: 0.05em;
     border-bottom: 1px solid {tokens['border_hairline']};
     padding-bottom: 8px;
     margin-bottom: 12px;
@@ -217,7 +219,6 @@ def render_attack_surface_graph_html(
     word-break: break-word;
   }}
   .inspector-body {{
-    font-family: 'IBM Plex Mono', monospace;
     font-size: 12px;
     color: {tokens['text_muted']};
     white-space: pre-wrap;
@@ -226,47 +227,47 @@ def render_attack_surface_graph_html(
   .inspector-hint {{
     font-size: 11px;
     color: {tokens['text_subtle']};
-    font-style: italic;
     margin-top: 16px;
   }}
   .col-label {{
-    font-family: 'IBM Plex Mono', monospace;
     font-size: 11px;
+    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     fill: {tokens['text_subtle']};
-    font-weight: 600;
   }}
   .conn-line {{
-    stroke: {tokens['border_hairline']};
-    stroke-width: 1px;
+    stroke: {tokens['border_strong']};
+    stroke-width: 1.2px;
     fill: none;
     transition: stroke 150ms ease, stroke-width 150ms ease;
   }}
   .conn-line.active {{
     stroke: {tokens['accent']};
-    stroke-width: 1.5px;
+    stroke-width: 2px;
   }}
   .node-box {{
     fill: {tokens['bg_surface']};
-    stroke: {tokens['border_hairline']};
+    stroke: {tokens['border_strong']};
     stroke-width: 1px;
-    rx: 2px;
+    rx: 6px;
+    ry: 6px;
     cursor: pointer;
-    transition: stroke 150ms ease, fill 150ms ease;
+    transition: stroke 150ms ease, fill 150ms ease, filter 150ms ease;
   }}
   .node-box:hover, .node-box.selected {{
     stroke: {tokens['accent']};
     fill: {tokens['bg_hover']};
   }}
   .node-text {{
-    font-family: 'IBM Plex Mono', monospace;
     font-size: 12px;
+    font-weight: 500;
     fill: {tokens['text_ink']};
     pointer-events: none;
   }}
   .sev-mark {{
-    rx: 1px;
+    rx: 2px;
+    ry: 2px;
   }}
 </style>
 </head>
@@ -287,7 +288,7 @@ def render_attack_surface_graph_html(
 
   <div class="inspector-pane">
     <div>
-      <div class="inspector-header">Inspector Panel</div>
+      <div class="inspector-header">Component Inspector</div>
       <div id="insp-title" class="inspector-title">Select a node</div>
       <div id="insp-body" class="inspector-body">Click any node in the exposure graph to inspect endpoint topology, verified boundaries, or finding details.</div>
     </div>
@@ -307,7 +308,7 @@ def render_attack_surface_graph_html(
   const inspBody = document.getElementById('insp-body');
 
   const BOX_W = 160;
-  const BOX_H = 30;
+  const BOX_H = 32;
 
   links.forEach((link, idx) => {{
     const s = nodeMap[link.source];
@@ -347,8 +348,8 @@ def render_attack_surface_graph_html(
       const sq = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
       sq.setAttribute('x', 8);
       sq.setAttribute('y', 11);
-      sq.setAttribute('width', 8);
-      sq.setAttribute('height', 8);
+      sq.setAttribute('width', 9);
+      sq.setAttribute('height', 9);
       sq.setAttribute('fill', node.color);
       sq.setAttribute('class', 'sev-mark');
       g.appendChild(sq);
@@ -357,49 +358,30 @@ def render_attack_surface_graph_html(
 
     const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     txt.setAttribute('x', textX);
-    txt.setAttribute('y', 19);
+    txt.setAttribute('y', 20);
     txt.setAttribute('class', 'node-text');
     txt.textContent = node.label;
     g.appendChild(txt);
 
-    g.addEventListener('mouseenter', () => {{
-      highlightConnections(node.id, true);
-    }});
-    g.addEventListener('mouseleave', () => {{
-      highlightConnections(node.id, false);
-    }});
-
     g.addEventListener('click', () => {{
-      selectNode(node);
+      document.querySelectorAll('.node-box').forEach(el => el.classList.remove('selected'));
+      rect.classList.add('selected');
+
+      document.querySelectorAll('.conn-line').forEach(el => {{
+        if (el.dataset.source === node.id || el.dataset.target === node.id) {{
+          el.classList.add('active');
+        }} else {{
+          el.classList.remove('active');
+        }}
+      }});
+
+      inspTitle.textContent = node.full_name || node.label;
+      inspBody.textContent = node.details || '';
     }});
 
     nodesGroup.appendChild(g);
   }});
-
-  let selectedNodeId = null;
-
-  function highlightConnections(nodeId, enable) {{
-    document.querySelectorAll('.conn-line').forEach(line => {{
-      if (line.dataset.source === nodeId || line.dataset.target === nodeId) {{
-        line.classList.toggle('active', enable);
-      }}
-    }});
-  }}
-
-  function selectNode(node) {{
-    if (selectedNodeId) {{
-      const prev = document.getElementById(`rect-${{selectedNodeId}}`);
-      if (prev) prev.classList.remove('selected');
-    }}
-    selectedNodeId = node.id;
-    const cur = document.getElementById(`rect-${{node.id}}`);
-    if (cur) cur.classList.add('selected');
-
-    inspTitle.textContent = `${{node.type}}: ${{node.full_name}}`;
-    inspBody.textContent = node.details;
-  }}
 </script>
-
 </body>
 </html>"""
     return html_content
