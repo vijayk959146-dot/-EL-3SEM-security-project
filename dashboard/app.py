@@ -36,7 +36,7 @@ from dashboard.sections.findings import render_findings_section
 from dashboard.sections.exposure import render_exposure_section
 from dashboard.sections.fixes import render_fixes_section
 from dashboard.sections.evidence import render_evidence_section
-from dashboard.sections.copilot import render_copilot_panel
+from dashboard.sections.copilot import render_copilot_panel, render_floating_copilot_fab
 
 # --- 1. Page Configuration ---
 st.set_page_config(
@@ -438,3 +438,6 @@ elif active_sec == "Fixes":
     render_fixes_section(report, discovered_ports=assets_data.get("ports", []))
 elif active_sec == "Evidence & reports":
     render_evidence_section(report, history_files=history_files, selected_history=selected_history)
+
+# --- 12. Persistent Floating Copilot Trigger (Bottom-Right FAB) ---
+render_floating_copilot_fab(report)

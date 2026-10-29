@@ -704,3 +704,69 @@ div[data-baseweb="select"] > div:focus-within {
     grid-template-columns: 1fr;
   }
 }
+
+/* =============================================================================
+   FLOATING COPILOT CHATBOT POPUP WIDGET (FAB)
+   ============================================================================= */
+.st-key-floating_copilot_popover {
+  position: fixed !important;
+  bottom: 28px !important;
+  right: 28px !important;
+  z-index: 999999 !important;
+}
+
+.st-key-floating_copilot_popover > div > button,
+.st-key-floating_copilot_popover button {
+  border-radius: var(--radius-pill) !important;
+  padding: 12px 22px !important;
+  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  font-weight: 700 !important;
+  font-size: 14px !important;
+  letter-spacing: 0.02em !important;
+  box-shadow: 0 10px 25px -4px rgba(37, 99, 235, 0.5), 0 4px 6px -2px rgba(37, 99, 235, 0.25) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  cursor: pointer !important;
+  transition: transform 150ms ease, box-shadow 150ms ease !important;
+}
+
+.st-key-floating_copilot_popover > div > button:hover,
+.st-key-floating_copilot_popover button:hover {
+  transform: translateY(-2px) scale(1.02) !important;
+  box-shadow: 0 16px 30px -4px rgba(37, 99, 235, 0.65), 0 6px 12px -2px rgba(37, 99, 235, 0.35) !important;
+  background: linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%) !important;
+}
+
+/* Sidebar Popover Button Styling */
+[data-testid="stSidebar"] [data-testid="stPopover"] > button {
+  border-radius: var(--radius-md) !important;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.1) 0%, rgba(37, 99, 235, 0.04) 100%) !important;
+  border: 1px solid rgba(37, 99, 235, 0.35) !important;
+  color: var(--accent) !important;
+  font-weight: 700 !important;
+  padding: 10px 14px !important;
+  transition: all var(--transition) !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stPopover"] > button:hover {
+  background: var(--accent) !important;
+  color: #FFFFFF !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3) !important;
+}
+
+/* Popover Content Window Customization */
+[data-testid="stPopoverBody"] {
+  max-width: 520px !important;
+  width: 480px !important;
+  max-height: 82vh !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: 0 20px 35px -5px rgba(15, 23, 42, 0.25), 0 10px 15px -5px rgba(15, 23, 42, 0.15) !important;
+  border: 1px solid var(--border-strong) !important;
+  background-color: var(--bg-surface) !important;
+  padding: 18px 20px !important;
+}
+
